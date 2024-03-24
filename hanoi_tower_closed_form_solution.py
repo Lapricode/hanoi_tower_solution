@@ -17,10 +17,6 @@ def calculate_move_transition(n, s, f, m):
     return r, xm, ym  # return r, xm, ym
 
 if __name__ == "__main__":
-    r, xm, ym = calculate_move_transition(1000, 1, 2, 666)
-    print(f"{int(xm)} -> {int(ym)} ({int(r)})")
-    r, xm, ym = calculate_move_transition(1000, 1, 3, 666)
-    print(f"{int(xm)} -> {int(ym)} ({int(r)})")
     while True:
         n = int(input("\nGive the number of rings (type a natural number 1, 2, 3, ...): "))  # ask for the number of rings
         s = int(input("\nGive the initial rod (type 1, 2 or 3): "))  # ask for the number of the initial rod
