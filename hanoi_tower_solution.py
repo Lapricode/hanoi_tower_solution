@@ -19,8 +19,9 @@ def calculate_move_transition(n, s, f, m):
 if __name__ == "__main__":
     while True:
         n = int(input("\nGive the number of rings (type a natural number 1, 2, 3, ...): "))  # ask for the number of rings
-        s = int(input("\nGive the initial rod (type 1, 2 or 3): "))  # ask for the number of the initial rod
-        f = int(input("\nGive the final rod (type 1, 2 or 3): "))  # ask for the number of the final rod
+        s = int(input("Give the initial rod (type 1, 2 or 3): "))  # ask for the number of the initial rod
+        f = int(input("Give the final rod (type 1, 2 or 3): "))  # ask for the number of the final rod
+        print()
         for m in range(1, 2**n):  # loop through all the moves of the optimal solve
             r, xm, ym = calculate_move_transition(n, s, f, m)  # calculate the transition of move m
             print(f"{m}:  {int(xm)} -> {int(ym)} ({int(r)})")  # print the results
