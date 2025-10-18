@@ -8,16 +8,16 @@ if __name__ == "__main__":
             if n < 1:
                 print("❌ The number of rings must be greater than 1.")
                 continue
-            s = int(input("Give the initial rod (type 1, 2 or 3): "))  # ask for the initial rod
+            s = int(input("Give the starting rod (type 1, 2 or 3): "))  # ask for the starting rod
             if s not in (1, 2, 3):
-                print("❌ The initial rod must be 1, 2, or 3.")
+                print("❌ The starting rod must be 1, 2, or 3.")
                 continue
             f = int(input("Give the final rod (type 1, 2 or 3): "))  # ask for the final rod
             if f not in (1, 2, 3):
                 print("❌ The final rod must be 1, 2, or 3.")
                 continue
-            if s == f:  # check that initial and final rods are not the same
-                print("❌ The initial and final rods must be different.")
+            if s == f:  # check that starting and final rods are not the same
+                print("❌ The starting and final rods must be different.")
                 continue
             print()
             for m in range(1, 2**n):  # loop through all the moves of the optimal solution
