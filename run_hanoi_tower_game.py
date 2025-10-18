@@ -5,7 +5,7 @@ if __name__ == "__main__":
     while True:
         try:
             n = int(input("\nGive the number of rings (type an integer greater than 1): "))  # ask for the number of rings
-            if n <= 1:
+            if n < 1:
                 print("❌ The number of rings must be greater than 1.")
                 continue
             s = int(input("Give the initial rod (type 1, 2 or 3): "))  # ask for the initial rod
