@@ -27,7 +27,7 @@ To get the desired optimal game, run the main script and enter:
 - **Starting rod** (`1–3`)
 - **Final rod** (`1–3`, different from starting one)
 
-The program prints the solution in the following format (for each one of the 2\*\*n-1 moves):
+The program prints the solution in the following format (for each one of the 2^n-1 moves):
 
 move_number: from -> to (ring_number)
 
