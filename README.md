@@ -6,7 +6,7 @@ This code computes the **Tower of Hanoi** optimal move sequence **without using 
 
 ### `calculate_move_transition(n, s, f, m)`
 
-Calculates the transition for the **m-th move** in the Tower of Hanoi sequence.
+Calculates the transition for the **m-th move** in the Tower of Hanoi optimal sequence.
 
 - **n** → total number of rings
 - **s** → starting rod
