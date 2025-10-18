@@ -1,8 +1,6 @@
 # Tower of Hanoi Move Calculator
 
-This code computes the **Tower of Hanoi** optimal move sequence **without using recursion**.
-
-It determines each move directly from mathematical relations, providing an efficient and elegant closed form solution.
+This code computes the **Tower of Hanoi** optimal move sequence **without using recursion**. It determines each move directly from mathematical relations, providing an efficient and elegant **closed form solution**.
 
 ## Usage
 
