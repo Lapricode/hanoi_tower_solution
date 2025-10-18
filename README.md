@@ -4,6 +4,23 @@ This code computes the **Tower of Hanoi** optimal move sequence **without using 
 
 ## Usage
 
+### `calculate_move_transition(n, s, f, m)`
+
+Calculates the transition for the **m-th move** in the Tower of Hanoi sequence.
+
+- **n** → total number of rings
+- **s** → starting rod
+- **f** → final rod
+- **m** → move number
+
+Returns a tuple **(r, xm, ym)** where:
+
+- **r** → ring number being moved
+- **xm** → source rod
+- **ym** → destination rod
+
+### `main`
+
 To get the desired optimal game, run the main script and enter:
 
 - **Number of rings** (`n >= 1`)
