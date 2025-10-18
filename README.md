@@ -24,12 +24,12 @@ Returns a tuple **(r, xm, ym)** where:
 To get the desired optimal game, run the main script and enter:
 
 - **Number of rings** (`n >= 1`)
-- **Initial rod** (`1–3`)
-- **Final rod** (`1–3`, different from initial)
+- **Starting rod** (`1–3`)
+- **Final rod** (`1–3`, different from starting one)
 
 The program prints the solution in the following format (for each one of the 2\*\*n-1 moves):
 
-`move_number: from -> to (ring_number)`
+move_number: from -> to (ring_number)
 
 ## Example:
 
@@ -37,7 +37,7 @@ The program prints the solution in the following format (for each one of the 2\*
 $ python3 main.py
 
 Give the number of rings (type an integer greater than 1): 3
-Give the initial rod (type 1, 2 or 3): 1
+Give the starting rod (type 1, 2 or 3): 1
 Give the final rod (type 1, 2 or 3): 3
 
 1:  1 -> 3 (1)
