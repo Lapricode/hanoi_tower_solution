@@ -51,6 +51,6 @@ def compute_full_sequence(rods, target):
     seq = {}
     for m in range(1, 2**n):
         r, x, y = compute_move_transition(n, start, target, m)
-        seq[m] = [r, x, y]
+        seq[m] = [int(r), int(x), int(y)]
     seq = simplify_sequence(seq)
     return seq

@@ -1,0 +1,22 @@
+{
+  "problems": {
+    "1": {
+      "initial_state": {
+        "1": [3, 2, 1],
+        "2": [],
+        "3": []
+      },
+      "target": 3,
+      "description": "Classic 3-ring problem: Move all rings from rod 1 to rod 3"
+    },
+    "2": {
+      "initial_state": {
+        "1": [2],
+        "2": [3],
+        "3": [1]
+      },
+      "target": 1,
+      "description": "Scattered rings: Move all rings to rod 1"
+    }
+  }
+}
