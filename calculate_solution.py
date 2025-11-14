@@ -47,10 +47,21 @@ def compute_full_sequence(rods, target):
     for i, rod in enumerate(rod_rings):
         for j in rod:
             rings_places[j - 1] = i + 1
-    start = rings_places[0]
     seq = {}
-    for m in range(1, 2**n):
-        r, x, y = compute_move_transition(n, start, target, m)
-        seq[m] = [int(r), int(x), int(y)]
+    move = 0
+    for k in range(1, n + 1):
+        for m in range(1, 2**k):
+            move += 1
+            if k != n:
+                if rings_places[k-1] != rings_places[k]:
+                    r, x, y = compute_move_transition(k, rings_places[k-1], rings_places[k], m)
+                else:
+                    break
+            else:
+                if rings_places[k-1] != target:
+                    r, x, y = compute_move_transition(k, rings_places[k-1], target, m)
+                else:
+                    break
+            seq[move] = [int(r), int(x), int(y)]
     seq = simplify_sequence(seq)
     return seq

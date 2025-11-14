@@ -7,16 +7,448 @@
         "3": []
       },
       "target": 3,
-      "description": "Classic 3-ring problem: Move all rings from rod 1 to rod 3"
+      "description": "Classic 3-ring: Move all rings from rod 1 to rod 3"
     },
     "2": {
+      "initial_state": {
+        "1": [3, 2],
+        "2": [1],
+        "3": []
+      },
+      "target": 3,
+      "description": "Split 3-ring: Move rings from rods 1&2 to rod 3"
+    },
+    "3": {
+      "initial_state": {
+        "1": [3],
+        "2": [2, 1],
+        "3": []
+      },
+      "target": 1,
+      "description": "Gather 3-ring: Move all rings to rod 1"
+    },
+    "4": {
       "initial_state": {
         "1": [2],
         "2": [3],
         "3": [1]
       },
+      "target": 2,
+      "description": "Scattered 3-ring: Move all rings to rod 2"
+    },
+    "5": {
+      "initial_state": {
+        "1": [1],
+        "2": [3],
+        "3": [2]
+      },
+      "target": 3,
+      "description": "Scattered 3-ring: Move all rings to rod 1"
+    },
+    "6": {
+      "initial_state": {
+        "1": [4, 3, 2, 1],
+        "2": [],
+        "3": []
+      },
+      "target": 3,
+      "description": "Classic 4-ring: Move all rings from rod 1 to rod 3"
+    },
+    "7": {
+      "initial_state": {
+        "1": [4, 3],
+        "2": [2, 1],
+        "3": []
+      },
+      "target": 3,
+      "description": "Split 4-ring: Move rings from rods 1&2 to rod 3"
+    },
+    "8": {
+      "initial_state": {
+        "1": [4],
+        "2": [3, 2, 1],
+        "3": []
+      },
       "target": 1,
-      "description": "Scattered rings: Move all rings to rod 1"
+      "description": "Gather 4-ring: Move all rings to rod 1"
+    },
+    "9": {
+      "initial_state": {
+        "1": [3, 2],
+        "2": [4, 1],
+        "3": []
+      },
+      "target": 2,
+      "description": "Mixed 4-ring: Move all rings to rod 2"
+    },
+    "10": {
+      "initial_state": {
+        "1": [2, 1],
+        "2": [4, 3],
+        "3": []
+      },
+      "target": 1,
+      "description": "Split 4-ring: Move all rings to rod 1"
+    },
+    "11": {
+      "initial_state": {
+        "1": [5, 4, 3, 2, 1],
+        "2": [],
+        "3": []
+      },
+      "target": 3,
+      "description": "Classic 5-ring: Move all rings from rod 1 to rod 3"
+    },
+    "12": {
+      "initial_state": {
+        "1": [5, 4],
+        "2": [3, 2, 1],
+        "3": []
+      },
+      "target": 3,
+      "description": "Split 5-ring: Move rings from rods 1&2 to rod 3"
+    },
+    "13": {
+      "initial_state": {
+        "1": [5],
+        "2": [4, 3, 2, 1],
+        "3": []
+      },
+      "target": 1,
+      "description": "Gather 5-ring: Move all rings to rod 1"
+    },
+    "14": {
+      "initial_state": {
+        "1": [4, 3, 2],
+        "2": [5, 1],
+        "3": []
+      },
+      "target": 2,
+      "description": "Mixed 5-ring: Move all rings to rod 2"
+    },
+    "15": {
+      "initial_state": {
+        "1": [3, 2, 1],
+        "2": [5, 4],
+        "3": []
+      },
+      "target": 1,
+      "description": "Split 5-ring: Move all rings to rod 1"
+    },
+    "16": {
+      "initial_state": {
+        "1": [2, 1],
+        "2": [5, 4, 3],
+        "3": []
+      },
+      "target": 2,
+      "description": "Mixed 5-ring: Move all rings to rod 2"
+    },
+    "17": {
+      "initial_state": {
+        "1": [6, 5, 4, 3, 2, 1],
+        "2": [],
+        "3": []
+      },
+      "target": 3,
+      "description": "Classic 6-ring: Move all rings from rod 1 to rod 3"
+    },
+    "18": {
+      "initial_state": {
+        "1": [6, 5],
+        "2": [4, 3, 2, 1],
+        "3": []
+      },
+      "target": 3,
+      "description": "Split 6-ring: Move rings from rods 1&2 to rod 3"
+    },
+    "19": {
+      "initial_state": {
+        "1": [6],
+        "2": [5, 4, 3, 2, 1],
+        "3": []
+      },
+      "target": 1,
+      "description": "Gather 6-ring: Move all rings to rod 1"
+    },
+    "20": {
+      "initial_state": {
+        "1": [5, 4, 3, 2],
+        "2": [6, 1],
+        "3": []
+      },
+      "target": 2,
+      "description": "Mixed 6-ring: Move all rings to rod 2"
+    },
+    "21": {
+      "initial_state": {
+        "1": [4, 3, 2, 1],
+        "2": [6, 5],
+        "3": []
+      },
+      "target": 1,
+      "description": "Split 6-ring: Move all rings to rod 1"
+    },
+    "22": {
+      "initial_state": {
+        "1": [3, 2, 1],
+        "2": [6, 5, 4],
+        "3": []
+      },
+      "target": 2,
+      "description": "Mixed 6-ring: Move all rings to rod 2"
+    },
+    "23": {
+      "initial_state": {
+        "1": [2, 1],
+        "2": [6, 5, 4, 3],
+        "3": []
+      },
+      "target": 1,
+      "description": "Split 6-ring: Move all rings to rod 1"
+    },
+    "24": {
+      "initial_state": {
+        "1": [7, 6, 5, 4, 3, 2, 1],
+        "2": [],
+        "3": []
+      },
+      "target": 3,
+      "description": "Classic 7-ring: Move all rings from rod 1 to rod 3"
+    },
+    "25": {
+      "initial_state": {
+        "1": [7, 6],
+        "2": [5, 4, 3, 2, 1],
+        "3": []
+      },
+      "target": 3,
+      "description": "Split 7-ring: Move rings from rods 1&2 to rod 3"
+    },
+    "26": {
+      "initial_state": {
+        "1": [7],
+        "2": [6, 5, 4, 3, 2, 1],
+        "3": []
+      },
+      "target": 1,
+      "description": "Gather 7-ring: Move all rings to rod 1"
+    },
+    "27": {
+      "initial_state": {
+        "1": [6, 5, 4, 3, 2],
+        "2": [7, 1],
+        "3": []
+      },
+      "target": 2,
+      "description": "Mixed 7-ring: Move all rings to rod 2"
+    },
+    "28": {
+      "initial_state": {
+        "1": [5, 4, 3, 2, 1],
+        "2": [7, 6],
+        "3": []
+      },
+      "target": 1,
+      "description": "Split 7-ring: Move all rings to rod 1"
+    },
+    "29": {
+      "initial_state": {
+        "1": [4, 3, 2, 1],
+        "2": [7, 6, 5],
+        "3": []
+      },
+      "target": 2,
+      "description": "Mixed 7-ring: Move all rings to rod 2"
+    },
+    "30": {
+      "initial_state": {
+        "1": [3, 2, 1],
+        "2": [7, 6, 5, 4],
+        "3": []
+      },
+      "target": 1,
+      "description": "Split 7-ring: Move all rings to rod 1"
+    },
+    "31": {
+      "initial_state": {
+        "1": [8, 7, 6, 5, 4, 3, 2, 1],
+        "2": [],
+        "3": []
+      },
+      "target": 3,
+      "description": "Classic 8-ring: Move all rings from rod 1 to rod 3"
+    },
+    "32": {
+      "initial_state": {
+        "1": [8, 7],
+        "2": [6, 5, 4, 3, 2, 1],
+        "3": []
+      },
+      "target": 3,
+      "description": "Split 8-ring: Move rings from rods 1&2 to rod 3"
+    },
+    "33": {
+      "initial_state": {
+        "1": [8],
+        "2": [7, 6, 5, 4, 3, 2, 1],
+        "3": []
+      },
+      "target": 1,
+      "description": "Gather 8-ring: Move all rings to rod 1"
+    },
+    "34": {
+      "initial_state": {
+        "1": [7, 6, 5, 4, 3, 2],
+        "2": [8, 1],
+        "3": []
+      },
+      "target": 2,
+      "description": "Mixed 8-ring: Move all rings to rod 2"
+    },
+    "35": {
+      "initial_state": {
+        "1": [6, 5, 4, 3, 2, 1],
+        "2": [8, 7],
+        "3": []
+      },
+      "target": 1,
+      "description": "Split 8-ring: Move all rings to rod 1"
+    },
+    "36": {
+      "initial_state": {
+        "1": [5, 4, 3, 2, 1],
+        "2": [8, 7, 6],
+        "3": []
+      },
+      "target": 2,
+      "description": "Mixed 8-ring: Move all rings to rod 2"
+    },
+    "37": {
+      "initial_state": {
+        "1": [4, 3, 2, 1],
+        "2": [8, 7, 6, 5],
+        "3": []
+      },
+      "target": 1,
+      "description": "Split 8-ring: Move all rings to rod 1"
+    },
+    "38": {
+      "initial_state": {
+        "1": [3, 2, 1],
+        "2": [8, 7, 6, 5, 4],
+        "3": []
+      },
+      "target": 2,
+      "description": "Mixed 8-ring: Move all rings to rod 2"
+    },
+    "39": {
+      "initial_state": {
+        "1": [2, 1],
+        "2": [8, 7, 6, 5, 4, 3],
+        "3": []
+      },
+      "target": 1,
+      "description": "Split 8-ring: Move all rings to rod 1"
+    },
+    "40": {
+      "initial_state": {
+        "1": [9, 8, 7, 6, 5, 4, 3, 2, 1],
+        "2": [],
+        "3": []
+      },
+      "target": 3,
+      "description": "Classic 9-ring: Move all rings from rod 1 to rod 3"
+    },
+    "41": {
+      "initial_state": {
+        "1": [9, 8],
+        "2": [7, 6, 5, 4, 3, 2, 1],
+        "3": []
+      },
+      "target": 3,
+      "description": "Split 9-ring: Move rings from rods 1&2 to rod 3"
+    },
+    "42": {
+      "initial_state": {
+        "1": [9],
+        "2": [8, 7, 6, 5, 4, 3, 2, 1],
+        "3": []
+      },
+      "target": 1,
+      "description": "Gather 9-ring: Move all rings to rod 1"
+    },
+    "43": {
+      "initial_state": {
+        "1": [8, 7, 6, 5, 4, 3, 2],
+        "2": [9, 1],
+        "3": []
+      },
+      "target": 2,
+      "description": "Mixed 9-ring: Move all rings to rod 2"
+    },
+    "44": {
+      "initial_state": {
+        "1": [7, 6, 5, 4, 3, 2, 1],
+        "2": [9, 8],
+        "3": []
+      },
+      "target": 1,
+      "description": "Split 9-ring: Move all rings to rod 1"
+    },
+    "45": {
+      "initial_state": {
+        "1": [6, 5, 4, 3, 2, 1],
+        "2": [9, 8, 7],
+        "3": []
+      },
+      "target": 2,
+      "description": "Mixed 9-ring: Move all rings to rod 2"
+    },
+    "46": {
+      "initial_state": {
+        "1": [5, 4, 3, 2, 1],
+        "2": [9, 8, 7, 6],
+        "3": []
+      },
+      "target": 1,
+      "description": "Split 9-ring: Move all rings to rod 1"
+    },
+    "47": {
+      "initial_state": {
+        "1": [4, 3, 2, 1],
+        "2": [9, 8, 7, 6, 5],
+        "3": []
+      },
+      "target": 2,
+      "description": "Mixed 9-ring: Move all rings to rod 2"
+    },
+    "48": {
+      "initial_state": {
+        "1": [3, 2, 1],
+        "2": [9, 8, 7, 6, 5, 4],
+        "3": []
+      },
+      "target": 1,
+      "description": "Split 9-ring: Move all rings to rod 1"
+    },
+    "49": {
+      "initial_state": {
+        "1": [10, 9, 8, 7, 6, 5, 4, 3, 2, 1],
+        "2": [],
+        "3": []
+      },
+      "target": 3,
+      "description": "Classic 10-ring: Move all rings from rod 1 to rod 3"
+    },
+    "50": {
+      "initial_state": {
+        "1": [10, 9],
+        "2": [8, 7, 6, 5, 4, 3, 2, 1],
+        "3": []
+      },
+      "target": 3,
+      "description": "Split 10-ring: Move rings from rods 1&2 to rod 3"
     }
   }
 }

@@ -4,7 +4,7 @@ from calculate_solution import compute_move_transition, compute_full_sequence
 from utils import is_valid_rods_state, print_solution, save_solution
 
 
-def input_method_all_together():
+def input_method_classic():
     '''
     Input method where all rings start on one rod and must move to target rod.
     Output:
@@ -91,9 +91,11 @@ def input_method_custom():
         return None, None
     return rods, target
 
-def input_method_problems():
+def input_method_problems(file = "problems.json"):
     '''
     Input method where user selects from predefined problems.
+    Input:
+        - file: the JSON file's name to read the problems from
     Output:
         - rods: a dictionary, in the form {1: <list>, 2: <list>, 3: <list>}
             - 1: the state of the first (left) rod, represented as a list of rings ordered from bottom to top
@@ -102,13 +104,13 @@ def input_method_problems():
         - target: the number of the target rod
     '''
     try:
-        with open("problems.json", "r") as f:
+        with open(file, "r") as f:
             problems_data = json.load(f)
     except FileNotFoundError:
-        print("❌ problems.json file not found!")
+        print(f"❌ {file} file not found!")
         return None, None
     except json.JSONDecodeError:
-        print("❌ Invalid JSON format in problems.json!")
+        print(f"❌ Invalid JSON format in {file}!")
         return None, None
     problems = problems_data['problems']
     print("\nAvailable Hanoi Tower Problems:")
@@ -142,31 +144,34 @@ def input_method_problems():
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Tower of Hanoi Solver")
-    parser.add_argument("--input-method", choices = ["classic", "manual", "preset"], 
-                       help = "Choose input method: 'classic' (all-together, default), 'manual' (custom), or 'preset' (problems)")
+    parser.add_argument("-im", choices = ["c", "m", "p"], default = "c", 
+                        help = "Choose input method: 'c' (classic, all-together, default), 'm' (manual, custom), or 'p' (preset, problems).")
+    parser.add_argument("-s", choices = ["y", "n"], default = "n", 
+                        help = "Enable ('y') or not ('n') the possibility to save the found solutions.")
     args = parser.parse_args()
-    input_method = args.input_method or "classic"
+    input_method = args.im
+    ask_save = args.s
     while True:
         try:
             rods = None
             target = None
-            if input_method == "classic":
-                rods, target = input_method_all_together()
-            elif input_method == "manual":
+            if input_method == "c":
+                rods, target = input_method_classic()
+            elif input_method == "m":
                 rods, target = input_method_custom()
-            elif input_method == "preset":                
+            elif input_method == "p":                
                 rods, target = input_method_problems()
             if rods is None:
                 continue
             seq = compute_full_sequence(rods, target)
             print_solution(seq)
-            while True:
+            while ask_save == "y":
                 try:
                     save_choice = input("\nDo you want to save this solution? (y/n, default=n): ").strip().lower()
                     if save_choice in ["", "n"]:
                         break
                     elif save_choice == "y":
-                        save_solution(rods, seq)
+                        save_solution(rods, target, seq, "solutions.json")
                         break
                     else:
                         print("Please enter 'y' or 'n'!")
