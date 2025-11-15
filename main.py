@@ -113,30 +113,37 @@ def input_method_problems(file = "problems.json"):
         print(f"❌ Invalid JSON format in {file}!")
         return None, None
     problems = problems_data['problems']
-    print("\nAvailable Hanoi Tower Problems:")
-    for num, problem in problems.items():
-        print(f"{num}. {problem['description']}")
-        print(f"   Initial: rod 1 = {problem['initial_state']['1']}, rod 2 = {problem['initial_state']['2']}, rod 3 = {problem['initial_state']['3']}")
-        print(f"   Target: Rod {problem['target']}")
-        print()
     while True:
         try:
-            choice = input("Enter the problem number you want to solve: ").strip()
-            if choice not in problems:
-                print(f"❌ Problem {choice} does not exist. Please choose from {', '.join(problems.keys())}.")
-                continue
-            selected_problem = problems[choice]
-            rods_state = {
-                1: selected_problem['initial_state']['1'],
-                2: selected_problem['initial_state']['2'],
-                3: selected_problem['initial_state']['3']
-            }
-            target = selected_problem['target']
-            if not is_valid_rods_state(rods_state):
-                print(f"❌ Problem {choice} has an invalid configuration!")
-                continue
-            print(f"\n✅ Selected Problem {choice}: {selected_problem['description']}")
-            return rods_state, target
+            choice = input("\nEnter the problem number you want to solve (type 'v [num]' to view the [num] problem): ").strip()
+            if choice[0] == 'v':
+                choice = choice.split()
+                if choice[-1].isdigit():
+                    chosen_problems = [(list(problems.keys())[int(choice[-1]) - 1], list(problems.values())[int(choice[-1]) - 1])]
+                else:
+                    chosen_problems = problems.items()
+                print("\nAvailable Hanoi Tower Problems:")
+                for num, problem in chosen_problems:
+                    print(f"{num}. {problem['description']}")
+                    print(f"   Initial: rod 1 = {problem['initial_state']['1']}, rod 2 = {problem['initial_state']['2']}, rod 3 = {problem['initial_state']['3']}")
+                    print(f"   Target: Rod {problem['target']}")
+                    print()
+            else:
+                if choice not in problems:
+                    print(f"❌ Problem {choice} does not exist. Please choose from {', '.join(problems.keys())}.")
+                    continue
+                selected_problem = problems[choice]
+                rods_state = {
+                    1: selected_problem['initial_state']['1'],
+                    2: selected_problem['initial_state']['2'],
+                    3: selected_problem['initial_state']['3']
+                }
+                target = selected_problem['target']
+                if not is_valid_rods_state(rods_state):
+                    print(f"❌ Problem {choice} has an invalid configuration!")
+                    continue
+                print(f"\n✅ Selected Problem {choice}: {selected_problem['description']}")
+                return rods_state, target
         except Exception as e:
             print(f"❌ An error occurred: {e}")
             continue

@@ -3,6 +3,7 @@ import sys
 import json
 from utils import load_solution, verify_solution
 
+
 def test_solutions(solution_numbers):
     """
     Test specified solutions by loading and verifying them

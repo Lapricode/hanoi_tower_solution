@@ -237,15 +237,11 @@ def simplify_sequence(seq):
                 moves[k] = (current_move[0], current_move[1], next_move[2])
                 del moves[k+1]
                 changed = True
+                current_move = moves[k]
+                if current_move[1] == current_move[2]:
+                    del moves[k]
             else:
                 k += 1
-    k = 0
-    while k < len(moves) - 1:
-        current_move = moves[k]
-        if current_move[1] == current_move[2]:
-            del moves[k]
-        else:
-            k += 1
     simple_seq = {}
     for m, (ring, source, dest) in enumerate(moves):
         simple_seq[m + 1] = [ring, source, dest]    
