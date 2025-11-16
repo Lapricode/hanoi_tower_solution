@@ -1,4 +1,3 @@
-import math
 from utils import simplify_sequence
 
 
@@ -6,7 +5,7 @@ def compute_move_transition(n, s, f, m):
     '''
     Input:
         - n: the total number of rings
-        - s: the number of the start rod
+        - s: the number of the starting rod
         - f: the number of the final rod
         - m: the number of the move of which I want to calculate the associated transition (xm, ym)
     Output:
@@ -39,12 +38,9 @@ def compute_full_sequence(rods, target):
             - x: the number of the rod from which the transition of move m starts
             - y: the number of the rod to which the transition of move m ends
     '''
-    r1, r2, r3 = rods[1], rods[2], rods[3]
-    r = r1 + r2 + r3
-    n = len(r)
-    rod_rings = list(rods.values())
+    n = len(rods[1] + rods[2] + rods[3])
     rings_places = n * [0]
-    for i, rod in enumerate(rod_rings):
+    for i, rod in enumerate(list(rods.values())):
         for j in rod:
             rings_places[j - 1] = i + 1
     seq = {}

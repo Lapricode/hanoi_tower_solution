@@ -1,6 +1,6 @@
 import argparse
 import json
-from calculate_solution import compute_move_transition, compute_full_sequence
+from calculate_solution import compute_full_sequence
 from utils import is_valid_rods_state, print_solution, save_solution
 
 
