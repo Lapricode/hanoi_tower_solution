@@ -8,7 +8,7 @@ This code calculates the **Tower of Hanoi** optimal move sequence **without usin
 
 The main mathematical core of the project, and building block for constructing the solutions (used by the `compute_full_sequence` function), avoiding the known slow recursive implementations. It calculates the transition for the **m-th move** in the Tower of Hanoi optimal sequence.
 
-```bash
+```python
 def compute_move_transition(n, s, f, m):
     '''
     Input:
