@@ -552,7 +552,7 @@ class HanoiScene:
 
 
 class MoveLog:
-    def __init__(self, rect, font, font_bold):
+    def __init__(self, rect, font, font_bold, on_move_click=None):
         self.rect = pygame.Rect(rect)
         self.font = font
         self.font_bold = font_bold
@@ -560,6 +560,27 @@ class MoveLog:
         self.scroll = 0
         self.current_index = 0  # highlighted entry (1-based count of completed moves)
         self.row_h = 26
+        self.dragging_scrollbar = False
+        self._drag_offset_y = 0
+        self.on_move_click = on_move_click
+
+    def _scroll_metrics(self):
+        clip = pygame.Rect(
+            self.rect.x + 8,
+            self.rect.y + 42,
+            self.rect.width - 16,
+            self.rect.height - 52,
+        )
+        visible_rows = max(1, clip.height // self.row_h)
+        total = len(self.entries)
+        max_scroll = max(0, total - visible_rows)
+        if total <= visible_rows:
+            return clip, visible_rows, max_scroll, None
+        bar_h = max(20, clip.height * visible_rows / total)
+        travel = max(1, clip.height - bar_h)
+        bar_y = clip.y + travel * (self.scroll / max_scroll if max_scroll else 0)
+        bar_rect = pygame.Rect(self.rect.right - 12, int(bar_y), 8, int(bar_h))
+        return clip, visible_rows, max_scroll, bar_rect
 
     def set_entries(self, seq):
         self.entries = []
@@ -578,12 +599,47 @@ class MoveLog:
         self.scroll = max(0, self.scroll)
 
     def handle_event(self, event):
-        if event.type == pygame.MOUSEWHEEL and self.rect.collidepoint(
-            pygame.mouse.get_pos()
-        ):
+        mouse_pos = event.pos if hasattr(event, "pos") else pygame.mouse.get_pos()
+        clip, _, max_scroll, bar_rect = self._scroll_metrics()
+
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            if bar_rect and bar_rect.inflate(8, 4).collidepoint(mouse_pos):
+                self.dragging_scrollbar = True
+                self._drag_offset_y = mouse_pos[1] - bar_rect.y
+                return True
+
+            # Clicking a move row jumps the visualizer directly to that move.
+            if clip.collidepoint(mouse_pos):
+                row_index = self.scroll + (mouse_pos[1] - clip.y) // self.row_h
+                row_y = clip.y + (row_index - self.scroll) * self.row_h
+                row_rect = pygame.Rect(clip.x, row_y, clip.width, self.row_h - 2)
+                if (
+                    0 <= row_index < len(self.entries)
+                    and row_rect.collidepoint(mouse_pos)
+                ):
+                    move_num = self.entries[row_index][0]
+                    if self.on_move_click:
+                        self.on_move_click(move_num)
+                    return True
+
+        elif event.type == pygame.MOUSEBUTTONUP and event.button == 1:
+            self.dragging_scrollbar = False
+        elif event.type == pygame.MOUSEMOTION and self.dragging_scrollbar and bar_rect:
+            current_bar_h = bar_rect.height
+            travel = max(1, clip.height - current_bar_h)
+            new_bar_y = clamp(
+                mouse_pos[1] - self._drag_offset_y,
+                clip.y,
+                clip.bottom - current_bar_h,
+            )
+            ratio = (new_bar_y - clip.y) / travel
+            self.scroll = int(round(ratio * max_scroll))
+            return True
+        elif event.type == pygame.MOUSEWHEEL and self.rect.collidepoint(mouse_pos):
             self.scroll -= event.y * 2
-            max_scroll = max(0, len(self.entries) - 3)
             self.scroll = clamp(self.scroll, 0, max_scroll)
+            return True
+        return False
 
     def draw(self, surf):
         rounded_rect(
@@ -634,16 +690,17 @@ class MoveLog:
 
         surf.set_clip(old_clip)
 
-        # simple scrollbar
-        total = len(self.entries)
-        visible_rows = clip.height // self.row_h
-        if total > visible_rows:
-            bar_h = max(20, clip.height * visible_rows / total)
-            bar_y = clip.y + (clip.height - bar_h) * (
-                self.scroll / max(1, total - visible_rows)
+        # draggable scrollbar
+        _, _, _, bar_rect = self._scroll_metrics()
+        if bar_rect:
+            track_rect = pygame.Rect(self.rect.right - 12, clip.y, 8, clip.height)
+            rounded_rect(surf, track_rect, PANEL_BG_LIGHT, radius=4)
+            rounded_rect(
+                surf,
+                bar_rect,
+                shade(ACCENT, 1.0) if self.dragging_scrollbar else ACCENT_DIM,
+                radius=4,
             )
-            bar_rect = pygame.Rect(self.rect.right - 8, bar_y, 4, bar_h)
-            rounded_rect(surf, bar_rect, ACCENT_DIM, radius=2)
 
 
 # ----------------------------------------------------------------------------
@@ -656,6 +713,8 @@ STATE_CUSTOM_SETUP = "custom_setup"
 STATE_PRESET_SETUP = "preset_setup"
 STATE_VISUALIZER = "visualizer"
 STATE_MESSAGE = "message"  # transient error overlay
+SAVE_DIALOG_W = 660
+SAVE_DIALOG_H = 250
 
 
 class HanoiApp:
@@ -690,7 +749,12 @@ class HanoiApp:
         self.seq = None
         self.n_total = 0
         self.scene = HanoiScene((0, 0, 100, 100))
-        self.move_log = MoveLog((0, 0, 100, 100), self.font_mono, self.font_body_bold)
+        self.move_log = MoveLog(
+            (0, 0, 100, 100),
+            self.font_mono,
+            self.font_body_bold,
+            on_move_click=self._jump_to_move,
+        )
         self.move_index = 0  # number of moves completed
         self.auto_play = False
         self.auto_timer = 0.0
@@ -727,6 +791,16 @@ class HanoiApp:
         self.problems = self._load_problems()
         self.preset_scroll = 0
         self.preset_selected = None
+        self.preset_dragging_scrollbar = False
+        self._preset_drag_offset_y = 0
+
+        # Save-as-preset dialog
+        self.save_dialog_open = False
+        self.save_description_input = TextInput(
+            (0, 0, 10, 10),
+            self.font_body,
+            placeholder="Describe this problem",
+        )
 
         self.layout_dirty = True
         self.build_main_menu()
@@ -734,12 +808,70 @@ class HanoiApp:
     # ---------------------------- data ----------------------------
 
     def _load_problems(self):
+        problems = {}
         try:
             with open("problems.json", "r") as f:
                 data = json.load(f)
-            return data.get("problems", {})
+            problems.update(data.get("problems", {}))
         except Exception:
-            return {}
+            pass
+        return problems
+
+    def _persist_saved_problem(self, description):
+        # Save every new problem directly in problems.json, using the next numeric index.
+        path = os.path.abspath("problems.json")
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+
+        try:
+            with open(path, "r") as f:
+                data = json.load(f)
+        except Exception:
+            data = {"problems": {}}
+
+        problems = data.setdefault("problems", {})
+
+        # Existing presets use numeric string keys ("1", "2", ...). Also tolerate
+        # integer keys or legacy "saved_N" keys when determining the next index.
+        numeric_ids = []
+        for key in problems:
+            try:
+                numeric_ids.append(int(key))
+                continue
+            except (TypeError, ValueError):
+                pass
+            if isinstance(key, str) and key.startswith("saved_"):
+                try:
+                    numeric_ids.append(int(key.split("_", 1)[1]))
+                except ValueError:
+                    pass
+
+        next_id = max(numeric_ids, default=0) + 1
+        key = str(next_id)
+        problem = {
+            "initial_state": {str(k): list(v) for k, v in self.rods.items()},
+            "target": self.target,
+            "description": description,
+        }
+        problems[key] = problem
+
+        with open(path, "w") as f:
+            json.dump(data, f, indent=2)
+
+        self.problems[key] = problem
+        return key
+
+    def _preset_scroll_metrics(self):
+        rect = self.preset_list_rect
+        row_h = 74
+        total_h = row_h * len(self.problems)
+        if total_h <= rect.height:
+            return 0, None
+        bar_h = max(30, rect.height * rect.height / total_h)
+        max_scroll = max(1, total_h - rect.height)
+        travel = max(1, rect.height - bar_h)
+        bar_y = rect.y + travel * (self.preset_scroll / max_scroll)
+        bar_rect = pygame.Rect(rect.right - 14, int(bar_y), 10, int(bar_h))
+        return max_scroll, bar_rect
 
     # ---------------------------- helpers ----------------------------
 
@@ -782,7 +914,7 @@ class HanoiApp:
             ),
             (
                 "Preset Problems",
-                "Choose from 50 predefined puzzles",
+                "Choose from built-in and saved puzzles",
                 lambda: self.set_state(STATE_PRESET_SETUP),
             ),
             ("Quit", None, self.quit),
@@ -1223,6 +1355,16 @@ class HanoiApp:
         self.move_index -= 1
         self._rebuild_to_index(self.move_index, animate_last=True)
 
+    def _jump_to_move(self, move_num):
+        if self.seq is None or self.scene.is_animating():
+            return
+        if move_num < 0 or move_num > len(self.seq):
+            return
+
+        self.auto_play = False
+        self.move_index = move_num
+        self._rebuild_to_index(move_num)
+
     def _rebuild_to_index(self, index, animate_last=False):
         # Reconstruct rods_state up to `index` moves applied, then snap scene instantly,
         # optionally animating the very last step for a nice "undo" feel.
@@ -1267,9 +1409,34 @@ class HanoiApp:
     def _save_current(self):
         if self.rods is None or self.seq is None:
             return
-        ok = save_solution(self.rods, self.target, self.seq, "solutions.json")
-        self.save_feedback = "Saved!" if ok else "Save failed."
+        self.save_dialog_open = True
+        self.save_description_input.text = ""
+        self.save_description_input.active = True
+        self.save_description_input.cursor_visible = True
+        self.save_dialog_error = None
+
+    def _confirm_save_problem(self):
+        if self.rods is None or self.seq is None:
+            return
+        description = self.save_description_input.text.strip()
+        if not description:
+            self.save_dialog_error = "Please enter a description."
+            self.save_description_input.active = True
+            return
+        try:
+            self._persist_saved_problem(description)
+            ok = save_solution(self.rods, self.target, self.seq, "solutions.json")
+        except Exception:
+            ok = False
+        self.save_dialog_open = False
+        self.save_description_input.active = False
+        self.save_feedback = "Saved as preset!" if ok else "Saved preset; solution save failed."
         self.save_feedback_timer = 2.5
+
+    def _cancel_save_problem(self):
+        self.save_dialog_open = False
+        self.save_description_input.active = False
+        self.save_dialog_error = None
 
     def _verify_current(self):
         if self.rods is None or self.seq is None:
@@ -1302,6 +1469,7 @@ class HanoiApp:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 self.running = False
+                continue
             elif event.type == pygame.VIDEORESIZE:
                 new_w = max(event.w, MIN_SCREEN_W)
                 new_h = max(event.h, MIN_SCREEN_H)
@@ -1309,7 +1477,25 @@ class HanoiApp:
                 self.set_state(self.state)
                 if self.state == STATE_VISUALIZER:
                     self.build_visualizer_layout()
-            elif event.type == pygame.KEYDOWN:
+                continue
+
+            # Save-description modal captures input before the underlying visualizer controls.
+            if self.state == STATE_VISUALIZER and self.save_dialog_open:
+                if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
+                    self._cancel_save_problem()
+                    continue
+                self.save_description_input.handle_event(event)
+                if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                    dialog = self._save_dialog_rect()
+                    save_rect = pygame.Rect(dialog.x + dialog.width - 280, dialog.bottom - 64, 130, 46)
+                    cancel_rect = pygame.Rect(dialog.x + dialog.width - 140, dialog.bottom - 64, 120, 46)
+                    if save_rect.collidepoint(event.pos):
+                        self._confirm_save_problem()
+                    elif cancel_rect.collidepoint(event.pos):
+                        self._cancel_save_problem()
+                continue
+
+            if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_ESCAPE:
                     if self.state == STATE_VISUALIZER:
                         self._back_from_visualizer()
@@ -1322,6 +1508,15 @@ class HanoiApp:
                         self._step_back()
                     elif event.key == pygame.K_SPACE:
                         self._toggle_play()
+
+            # Preset and move-log scrollbars need first chance to consume mouse input.
+            consumed = False
+            if self.state == STATE_PRESET_SETUP:
+                consumed = self._handle_preset_events(event)
+            elif self.state == STATE_VISUALIZER:
+                consumed = self.move_log.handle_event(event)
+            if consumed:
+                continue
 
             for btn in self.buttons:
                 btn.handle_event(event)
@@ -1337,29 +1532,47 @@ class HanoiApp:
                     self.custom_inputs[rod].handle_event(event)
                 for b in getattr(self, "custom_target_buttons", []):
                     b.handle_event(event)
-            elif self.state == STATE_PRESET_SETUP:
-                self._handle_preset_events(event)
-            elif self.state == STATE_VISUALIZER:
-                self.move_log.handle_event(event)
 
     def _handle_preset_events(self, event):
+        mouse_pos = event.pos if hasattr(event, "pos") else pygame.mouse.get_pos()
+        max_scroll, bar_rect = self._preset_scroll_metrics()
+
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-            if self.preset_list_rect.collidepoint(event.pos):
+            if bar_rect and bar_rect.inflate(8, 4).collidepoint(mouse_pos):
+                self.preset_dragging_scrollbar = True
+                self._preset_drag_offset_y = mouse_pos[1] - bar_rect.y
+                return True
+            if self.preset_list_rect.collidepoint(mouse_pos):
                 row_h = 74
-                rel_y = event.pos[1] - self.preset_list_rect.y + self.preset_scroll
+                rel_y = mouse_pos[1] - self.preset_list_rect.y + self.preset_scroll
                 idx = rel_y // row_h
                 keys = list(self.problems.keys())
                 if 0 <= idx < len(keys):
                     self.preset_selected = keys[idx]
                     self.build_preset_setup()
-        elif event.type == pygame.MOUSEWHEEL:
-            if self.preset_list_rect.collidepoint(pygame.mouse.get_pos()):
-                row_h = 74
-                total_h = row_h * len(self.problems)
-                max_scroll = max(0, total_h - self.preset_list_rect.height)
-                self.preset_scroll = clamp(
-                    self.preset_scroll - event.y * 40, 0, max_scroll
-                )
+                return True
+        elif event.type == pygame.MOUSEBUTTONUP and event.button == 1:
+            was_dragging = self.preset_dragging_scrollbar
+            self.preset_dragging_scrollbar = False
+            return was_dragging
+        elif event.type == pygame.MOUSEMOTION and self.preset_dragging_scrollbar and bar_rect:
+            rect = self.preset_list_rect
+            bar_h = bar_rect.height
+            travel = max(1, rect.height - bar_h)
+            new_bar_y = clamp(
+                mouse_pos[1] - self._preset_drag_offset_y,
+                rect.y,
+                rect.bottom - bar_h,
+            )
+            ratio = (new_bar_y - rect.y) / travel
+            self.preset_scroll = int(round(ratio * max_scroll))
+            return True
+        elif event.type == pygame.MOUSEWHEEL and self.preset_list_rect.collidepoint(mouse_pos):
+            self.preset_scroll = clamp(
+                self.preset_scroll - event.y * 40, 0, max_scroll
+            )
+            return True
+        return False
 
     # ---------------------------- update ----------------------------
 
@@ -1372,6 +1585,8 @@ class HanoiApp:
         elif self.state == STATE_CUSTOM_SETUP:
             for rod in (1, 2, 3):
                 self.custom_inputs[rod].update(dt)
+        elif self.state == STATE_VISUALIZER and self.save_dialog_open:
+            self.save_description_input.update(dt)
 
         if self.message_timer > 0:
             self.message_timer -= dt
@@ -1427,6 +1642,9 @@ class HanoiApp:
 
         for btn in self.buttons:
             btn.draw(surf)
+
+        if self.state == STATE_VISUALIZER and self.save_dialog_open:
+            self._draw_save_dialog(surf)
 
         self._draw_messages(surf)
 
@@ -1543,8 +1761,17 @@ class HanoiApp:
         surf.blit(hint2, hint2.get_rect(centerx=cx, top=hint_y + 44))
 
     def _draw_preset_setup(self, surf):
+        builtin_count = 0
+        try:
+            with open("problems.json", "r") as f:
+                builtin_count = len(json.load(f).get("problems", {}))
+        except Exception:
+            pass
+        saved_count = max(0, len(self.problems) - builtin_count)
         self._draw_header(
-            surf, "Preset Problems", "Choose one of 50 predefined puzzles"
+            surf,
+            "Preset Problems",
+            f"{builtin_count} built-in puzzle(s) + {saved_count} saved puzzle(s)",
         )
         rect = self.preset_list_rect
         rounded_rect(
@@ -1602,15 +1829,17 @@ class HanoiApp:
 
         surf.set_clip(old_clip)
 
-        # scrollbar
-        total_h = row_h * len(keys)
-        if total_h > rect.height:
-            bar_h = max(24, rect.height * rect.height / total_h)
-            bar_y = rect.y + (rect.height - bar_h) * (
-                self.preset_scroll / (total_h - rect.height)
+        # draggable scrollbar
+        _, bar_rect = self._preset_scroll_metrics()
+        if bar_rect:
+            track_rect = pygame.Rect(rect.right - 14, rect.y, 10, rect.height)
+            rounded_rect(surf, track_rect, PANEL_BG_LIGHT, radius=5)
+            rounded_rect(
+                surf,
+                bar_rect,
+                shade(ACCENT, 1.0) if self.preset_dragging_scrollbar else ACCENT_DIM,
+                radius=5,
             )
-            bar_rect = pygame.Rect(rect.right - 10, bar_y, 5, bar_h)
-            rounded_rect(surf, bar_rect, ACCENT_DIM, radius=3)
 
     def _draw_visualizer(self, surf):
         w = surf.get_width()
@@ -1666,6 +1895,47 @@ class HanoiApp:
             color = SUCCESS if "Valid" in self.verify_feedback else ERROR
             t = self.font_body_bold.render(self.verify_feedback, True, color)
             surf.blit(t, t.get_rect(right=w - 24, top=toast_y))
+
+    def _save_dialog_rect(self):
+        rect = pygame.Rect(0, 0, SAVE_DIALOG_W, SAVE_DIALOG_H)
+        rect.center = (self.screen.get_width() // 2, self.screen.get_height() // 2)
+        return rect
+
+    def _draw_save_dialog(self, surf):
+        overlay = pygame.Surface(surf.get_size(), pygame.SRCALPHA)
+        overlay.fill((0, 0, 0, 155))
+        surf.blit(overlay, (0, 0))
+
+        rect = self._save_dialog_rect()
+        rounded_rect(
+            surf, rect, PANEL_BG, radius=16, border_color=ACCENT, border_width=2
+        )
+        title = self.font_h2.render("Save Problem", True, TEXT_MAIN)
+        surf.blit(title, (rect.x + 28, rect.y + 22))
+        prompt = self.font_small.render(
+            "Enter a description; this problem will appear in Preset Problems.",
+            True,
+            TEXT_DIM,
+        )
+        surf.blit(prompt, (rect.x + 28, rect.y + 66))
+
+        self.save_description_input.rect = pygame.Rect(
+            rect.x + 28, rect.y + 105, rect.width - 56, 52
+        )
+        self.save_description_input.draw(surf)
+
+        if getattr(self, "save_dialog_error", None):
+            err = self.font_small.render(self.save_dialog_error, True, ERROR)
+            surf.blit(err, (rect.x + 28, rect.y + 164))
+
+        save_rect = pygame.Rect(rect.x + rect.width - 280, rect.bottom - 64, 130, 46)
+        cancel_rect = pygame.Rect(rect.x + rect.width - 140, rect.bottom - 64, 120, 46)
+        rounded_rect(surf, save_rect, ACCENT, radius=10)
+        rounded_rect(surf, cancel_rect, PANEL_BG_LIGHT, radius=10, border_color=PANEL_BORDER, border_width=2)
+        save_txt = self.font_body_bold.render("Save", True, (18, 20, 30))
+        cancel_txt = self.font_body_bold.render("Cancel", True, TEXT_MAIN)
+        surf.blit(save_txt, save_txt.get_rect(center=save_rect.center))
+        surf.blit(cancel_txt, cancel_txt.get_rect(center=cancel_rect.center))
 
     def _start_rod_display(self):
         for rod, stack in self.rods.items():
