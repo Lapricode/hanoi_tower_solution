@@ -132,6 +132,57 @@ python3 test_solutions.py all
 python3 test_solutions.py 1-5
 ```
 
+## Visual Solver (Pygame GUI)
+
+A graphical wrapper around the original closed-form Hanoi solver was also developed using pygame, offering a visual, animated interface on top of the main code.
+
+### Setup
+
+```bash
+pip install pygame
+```
+
+### Run
+
+```bash
+python3 hanoi_gui.py
+```
+
+A window opens with a main menu.
+
+### What it does
+
+All three original input methods are supported, plus solution saving and
+verification:
+
+- **Classic Mode** — pick a ring count (1–12) and a start/target rod; all
+  rings begin stacked on the start rod.
+- **Custom Mode** — type the rings on each rod yourself (bottom → top,
+  comma-separated) and pick a target rod. Same validation rules as the
+  original CLI (rings 1..N, no repeats, largest at the bottom of each rod).
+- **Preset Problems** — browse and pick from all 50 problems in
+  `problems.json`.
+
+After solving, you land on the **visualizer**:
+
+- Rings animate along an arc from rod to rod.
+- The move log on the right lists every move and highlights the current one,
+  auto-scrolling as you go.
+- Controls: **Back**, step **<** / **>**, **Play/Pause**, **Reset**,
+  **Skip End**, a **speed** dial (**-** / **+**), and **Save Solution** /
+  **Verify Solution**, which call your original `save_solution()` and
+  `verify_solution()` functions and write to `solutions.json` exactly like
+  the CLI did.
+- Keyboard shortcuts: **←/→** to step, **space** to play/pause, **Esc** to
+  go back.
+
+The window is resizable; the layout (including the control bar, which
+switches between one and two rows) adapts to the available space.
+
+### Files
+
+`hanoi_gui.py` along with all the main python code
+
 ## Known Limitations
 
 **Optimal Solutions:**
