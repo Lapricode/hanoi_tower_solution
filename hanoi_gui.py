@@ -712,6 +712,8 @@ STATE_CLASSIC_SETUP = "classic_setup"
 STATE_CUSTOM_SETUP = "custom_setup"
 STATE_PRESET_SETUP = "preset_setup"
 STATE_VISUALIZER = "visualizer"
+STATE_PLAY_SETUP = "play_setup"
+STATE_PLAY = "play"
 STATE_MESSAGE = "message"  # transient error overlay
 SAVE_DIALOG_W = 660
 SAVE_DIALOG_H = 250
@@ -801,6 +803,35 @@ class HanoiApp:
             self.font_body,
             placeholder="Describe this problem",
         )
+
+        # Play mode setup fields (reuses the same per-rod text-input idea as
+        # Custom Mode, plus a target rod that defines the "solved" state).
+        self.play_setup_inputs = {
+            1: TextInput((0, 0, 10, 10), self.font_body, placeholder="e.g. 3, 2, 1"),
+            2: TextInput((0, 0, 10, 10), self.font_body, placeholder="empty"),
+            3: TextInput((0, 0, 10, 10), self.font_body, placeholder="empty"),
+        }
+        self.play_target_rod = 3
+
+        # Play mode board state
+        self.play_scene = HanoiScene((0, 0, 100, 100))
+        self.play_rods = None
+        self.play_rods_initial = None
+        self.play_target = None
+        self.play_n_total = 0
+        self.play_optimal_moves = 0
+        self.play_move_count = 0
+        self.play_elapsed = 0.0
+        self.play_running = False   # timer running (paused once solved)
+        self.play_solved = False
+        self.play_selected_rod = None      # click-to-select source rod
+        self.play_drag_ring_id = None      # ring id currently being dragged
+        self.play_drag_source_rod = None
+        self.play_drag_pos = (0, 0)
+        self.play_drag_offset = (0, 0)
+        self.play_invalid_flash_rod = None
+        self.play_invalid_flash_timer = 0.0
+        self.play_win_toast_shown = False
 
         self.layout_dirty = True
         self.build_main_menu()
@@ -893,6 +924,10 @@ class HanoiApp:
             self.build_custom_setup()
         elif state == STATE_PRESET_SETUP:
             self.build_preset_setup()
+        elif state == STATE_PLAY_SETUP:
+            self.build_play_setup()
+        elif state == STATE_PLAY:
+            self.build_play_layout()
 
     # ---------------------------- layout builders ----------------------------
 
@@ -911,6 +946,11 @@ class HanoiApp:
                 "Custom Mode",
                 "Place rings on rods yourself",
                 lambda: self.set_state(STATE_CUSTOM_SETUP),
+            ),
+            (
+                "Play Mode",
+                "Set up a puzzle and solve it by hand",
+                lambda: self.set_state(STATE_PLAY_SETUP),
             ),
             (
                 "Preset Problems",
@@ -1060,6 +1100,55 @@ class HanoiApp:
     def _set_custom_target(self, rod):
         self.custom_target_rod = rod
         self.build_custom_setup()
+
+    def build_play_setup(self):
+        self.buttons = []
+        cx = self.screen.get_width() // 2
+        panel_w = 640
+        left = cx - panel_w // 2
+        y = 210
+        row_h = 64
+        for i, rod in enumerate((1, 2, 3)):
+            self.play_setup_inputs[rod].rect = pygame.Rect(
+                left + 170, y + i * row_h, panel_w - 170, 44
+            )
+
+        target_y = y + 3 * row_h + 20
+        self.play_target_buttons = []
+        for i, rod in enumerate((1, 2, 3)):
+            bx = left + 170 + i * 90
+            btn = Button(
+                (bx, target_y, 76, 44),
+                str(rod),
+                self.font_body_bold,
+                on_click=(lambda r=rod: self._set_play_target(r)),
+                style=("primary" if rod == self.play_target_rod else "secondary"),
+            )
+            self.play_target_buttons.append(btn)
+
+        action_y = target_y + 90
+        self.buttons.append(
+            Button(
+                (left, action_y, 170, 52),
+                "Back",
+                self.font_body_bold,
+                on_click=lambda: self.set_state(STATE_MAIN_MENU),
+                style="secondary",
+            )
+        )
+        self.buttons.append(
+            Button(
+                (left + panel_w - 220, action_y, 220, 52),
+                "Start Playing",
+                self.font_body_bold,
+                on_click=self._submit_play_setup,
+                style="primary",
+            )
+        )
+
+    def _set_play_target(self, rod):
+        self.play_target_rod = rod
+        self.build_play_setup()
 
     def build_preset_setup(self):
         self.buttons = []
@@ -1224,6 +1313,36 @@ class HanoiApp:
             )
         )
 
+    def build_play_layout(self):
+        self.buttons = []
+        w, h = self.screen.get_width(), self.screen.get_height()
+        bar_row_h = 52
+        bar_top_y = h - 20 - bar_row_h
+        scene_area = (20, 110, w - 40, bar_top_y - 130)
+        self.play_scene.resize(scene_area)
+
+        bx = 20
+        self.buttons.append(
+            Button(
+                (bx, bar_top_y, 100, bar_row_h),
+                "Back",
+                self.font_body_bold,
+                on_click=self._back_from_play,
+                style="secondary",
+            )
+        )
+        bx += 112
+        self.buttons.append(
+            Button(
+                (bx, bar_top_y, 120, bar_row_h),
+                "Restart",
+                self.font_body_bold,
+                on_click=self._restart_play,
+                style="secondary",
+            )
+        )
+        self.play_control_bar_top_y = bar_top_y
+
     # ---------------------------- submit handlers ----------------------------
 
     def _submit_classic(self):
@@ -1253,30 +1372,49 @@ class HanoiApp:
             return
         self._start_solution(rods, target)
 
-    def _submit_custom(self):
+    def _parse_rod_inputs(self, inputs, max_rings=16):
+        """Parse the three per-rod text inputs into a rods dict, or return
+        (None, error_message) if invalid. Shared by Custom Mode and Play Mode
+        setup screens, which use the same comma-separated-per-rod format."""
         rods = {1: [], 2: [], 3: []}
         try:
             for rod in (1, 2, 3):
-                text = self.custom_inputs[rod].text.strip()
+                text = inputs[rod].text.strip()
                 if not text:
                     rods[rod] = []
                     continue
                 rings = [int(x.strip()) for x in text.split(",") if x.strip() != ""]
                 rods[rod] = rings
         except ValueError:
-            self.show_error("Please enter valid integers separated by commas.")
-            return
+            return None, "Please enter valid integers separated by commas."
         total = len(rods[1]) + len(rods[2]) + len(rods[3])
         if total == 0:
-            self.show_error("At least one ring must be placed on a rod.")
-            return
-        if total > 16:
-            self.show_error("Please use 16 rings or fewer for a clear visualization.")
-            return
+            return None, "At least one ring must be placed on a rod."
+        if total > max_rings:
+            return None, f"Please use {max_rings} rings or fewer for a clear visualization."
         if not is_valid_rods_state(rods):
-            self.show_error("Invalid configuration — check ring order and numbering.")
+            return None, "Invalid configuration — check ring order and numbering."
+        return rods, None
+
+    def _submit_custom(self):
+        rods, error = self._parse_rod_inputs(self.custom_inputs)
+        if error:
+            self.show_error(error)
             return
         self._start_solution(rods, self.custom_target_rod)
+
+    def _submit_play_setup(self):
+        rods, error = self._parse_rod_inputs(self.play_setup_inputs)
+        if error:
+            self.show_error(error)
+            return
+        total = sum(len(v) for v in rods.values())
+        already_solved = len(rods[self.play_target_rod]) == total
+        if already_solved:
+            self.show_error("This puzzle is already solved — rings are already on the target rod.")
+            return
+        self.play_rods_initial = {k: list(v) for k, v in rods.items()}
+        self._start_play(rods, self.play_target_rod)
 
     def _submit_preset(self):
         if self.preset_selected is None:
@@ -1315,6 +1453,33 @@ class HanoiApp:
         self.verify_feedback = None
         self.set_state(STATE_VISUALIZER)
         self.build_visualizer_layout()
+
+    def _start_play(self, rods, target):
+        """Initialize Play Mode: the user must solve the puzzle by hand."""
+        # We compute the optimal move count up front (for the end-of-game
+        # comparison) but deliberately never show the move sequence itself.
+        try:
+            optimal_seq = compute_full_sequence(rods, target)
+        except Exception as e:
+            self.show_error(f"Failed to prepare puzzle: {e}")
+            return
+        self.play_rods = {k: list(v) for k, v in rods.items()}
+        self.play_target = target
+        self.play_n_total = sum(len(v) for v in rods.values())
+        self.play_optimal_moves = len(optimal_seq)
+        self.play_scene.configure(self.play_rods, self.play_n_total)
+        self.play_move_count = 0
+        self.play_elapsed = 0.0
+        self.play_running = True
+        self.play_solved = False
+        self.play_selected_rod = None
+        self.play_drag_ring_id = None
+        self.play_drag_source_rod = None
+        self.play_invalid_flash_rod = None
+        self.play_invalid_flash_timer = 0.0
+        self.play_win_toast_shown = False
+        self.set_state(STATE_PLAY)
+        self.build_play_layout()
 
     # ---------------------------- visualizer controls ----------------------------
 
@@ -1451,6 +1616,154 @@ class HanoiApp:
         self.verify_feedback = "Valid solution!" if ok else "Invalid solution."
         self.verify_feedback_timer = 2.5
 
+    # ---------------------------- play mode controls ----------------------------
+
+    def _back_from_play(self):
+        self.set_state(STATE_MAIN_MENU)
+
+    def _restart_play(self):
+        if self.play_target is None:
+            return
+        self._start_play(self.play_rods_initial, self.play_target)
+
+    def _play_can_move(self, source_rod, dest_rod):
+        """A move is legal iff the source rod has a ring and the destination
+        rod is empty or its top ring is larger (numerically greater id, by
+        this project's convention that ring 1 is smallest)."""
+        if source_rod == dest_rod:
+            return False
+        stack = self.play_scene.rods_state.get(source_rod)
+        if not stack:
+            return False
+        moving_ring = stack[-1]
+        dest_stack = self.play_scene.rods_state.get(dest_rod)
+        if dest_stack:
+            return moving_ring < dest_stack[-1]
+        return True
+
+    def _play_flash_invalid(self, rod):
+        self.play_invalid_flash_rod = rod
+        self.play_invalid_flash_timer = 0.35
+
+    def _play_attempt_move(self, source_rod, dest_rod):
+        """Try to move the top ring of source_rod onto dest_rod. Returns True
+        if the move was made."""
+        if not self._play_can_move(source_rod, dest_rod):
+            self._play_flash_invalid(dest_rod)
+            return False
+        ring_id = self.play_scene.rods_state[source_rod][-1]
+        self.play_scene.apply_move(ring_id, source_rod, dest_rod, duration=0.28)
+        self.play_move_count += 1
+        self._play_check_win()
+        return True
+
+    def _play_check_win(self):
+        target_stack = self.play_scene.rods_state.get(self.play_target, [])
+        if len(target_stack) == self.play_n_total:
+            self.play_solved = True
+            self.play_running = False
+
+    def _play_rod_at_pos(self, pos):
+        """Which rod (1/2/3) a screen position is closest to, if it's within
+        a reasonably generous horizontal band of that rod, else None."""
+        scene = self.play_scene
+        best_rod, best_dist = None, None
+        band = max(70, (scene.max_ring_w // 2) + 20)
+        for rod, x in scene.rod_x.items():
+            dist = abs(pos[0] - x)
+            if dist <= band and (best_dist is None or dist < best_dist):
+                best_rod, best_dist = rod, dist
+        return best_rod
+
+    def _play_topmost_ring_hit(self, pos):
+        """If pos is over the topmost ring of some rod, return that rod,
+        else None. Used to start a drag."""
+        scene = self.play_scene
+        for rod, stack in scene.rods_state.items():
+            if not stack:
+                continue
+            ring_id = stack[-1]
+            ring = scene.rings.get(ring_id)
+            if ring is None or ring.animating:
+                continue
+            w = int(ring.width_for(scene.min_ring_w, scene.max_ring_w))
+            hgt = scene.ring_thickness
+            rect = pygame.Rect(0, 0, w, hgt)
+            rect.center = (int(ring.x), int(ring.y))
+            if rect.collidepoint(pos):
+                return rod
+        return None
+
+    def _play_handle_event(self, event):
+        """Returns True if the event was consumed by play-mode board logic."""
+        if self.play_scene.is_animating():
+            # Don't allow starting new interactions mid-animation, but do let
+            # button clicks (Back/Restart) through untouched.
+            return False
+
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            if not self.play_scene.area.collidepoint(event.pos) and \
+                    event.pos[1] > self.play_scene.area.bottom:
+                return False
+            rod_hit = self._play_topmost_ring_hit(event.pos)
+            if rod_hit is not None:
+                # Start a drag of the topmost ring on that rod.
+                ring_id = self.play_scene.rods_state[rod_hit][-1]
+                ring = self.play_scene.rings[ring_id]
+                self.play_drag_ring_id = ring_id
+                self.play_drag_source_rod = rod_hit
+                self.play_drag_offset = (event.pos[0] - ring.x, event.pos[1] - ring.y)
+                self.play_drag_pos = (ring.x, ring.y)
+                self.play_scene.moving_ring_id = ring_id
+                self.play_selected_rod = None
+                return True
+            # Not on a ring: treat as a click-to-select on the nearest rod.
+            rod_near = self._play_rod_at_pos(event.pos)
+            if rod_near is not None:
+                if self.play_selected_rod is None:
+                    if self.play_scene.rods_state.get(rod_near):
+                        self.play_selected_rod = rod_near
+                    else:
+                        self._play_flash_invalid(rod_near)
+                elif self.play_selected_rod == rod_near:
+                    self.play_selected_rod = None
+                else:
+                    self._play_attempt_move(self.play_selected_rod, rod_near)
+                    self.play_selected_rod = None
+                return True
+            return False
+
+        elif event.type == pygame.MOUSEMOTION:
+            if self.play_drag_ring_id is not None:
+                self.play_drag_pos = (
+                    event.pos[0] - self.play_drag_offset[0],
+                    event.pos[1] - self.play_drag_offset[1],
+                )
+                ring = self.play_scene.rings[self.play_drag_ring_id]
+                ring.x, ring.y = self.play_drag_pos
+                return True
+            return False
+
+        elif event.type == pygame.MOUSEBUTTONUP and event.button == 1:
+            if self.play_drag_ring_id is not None:
+                dest_rod = self._play_rod_at_pos(event.pos)
+                source_rod = self.play_drag_source_rod
+                ring_id = self.play_drag_ring_id
+                self.play_drag_ring_id = None
+                self.play_drag_source_rod = None
+                self.play_scene.moving_ring_id = None
+                if dest_rod is None or not self._play_attempt_move(source_rod, dest_rod):
+                    # Snap back to its resting slot on the source rod.
+                    idx = len(self.play_scene.rods_state[source_rod]) - 1
+                    x, y = self.play_scene._slot_pos(source_rod, max(idx, 0))
+                    ring = self.play_scene.rings[ring_id]
+                    ring.x, ring.y = x, y
+                    ring.target_x, ring.target_y = x, y
+                return True
+            return False
+
+        return False
+
     # ---------------------------- event loop ----------------------------
 
     def quit(self):
@@ -1477,6 +1790,8 @@ class HanoiApp:
                 self.set_state(self.state)
                 if self.state == STATE_VISUALIZER:
                     self.build_visualizer_layout()
+                elif self.state == STATE_PLAY:
+                    self.build_play_layout()
                 continue
 
             # Save-description modal captures input before the underlying visualizer controls.
@@ -1515,6 +1830,8 @@ class HanoiApp:
                 consumed = self._handle_preset_events(event)
             elif self.state == STATE_VISUALIZER:
                 consumed = self.move_log.handle_event(event)
+            elif self.state == STATE_PLAY:
+                consumed = self._play_handle_event(event)
             if consumed:
                 continue
 
@@ -1531,6 +1848,11 @@ class HanoiApp:
                 for rod in (1, 2, 3):
                     self.custom_inputs[rod].handle_event(event)
                 for b in getattr(self, "custom_target_buttons", []):
+                    b.handle_event(event)
+            elif self.state == STATE_PLAY_SETUP:
+                for rod in (1, 2, 3):
+                    self.play_setup_inputs[rod].handle_event(event)
+                for b in getattr(self, "play_target_buttons", []):
                     b.handle_event(event)
 
     def _handle_preset_events(self, event):
@@ -1585,6 +1907,9 @@ class HanoiApp:
         elif self.state == STATE_CUSTOM_SETUP:
             for rod in (1, 2, 3):
                 self.custom_inputs[rod].update(dt)
+        elif self.state == STATE_PLAY_SETUP:
+            for rod in (1, 2, 3):
+                self.play_setup_inputs[rod].update(dt)
         elif self.state == STATE_VISUALIZER and self.save_dialog_open:
             self.save_description_input.update(dt)
 
@@ -1623,6 +1948,16 @@ class HanoiApp:
             self.btn_step_fwd.enabled = self._can_step_fwd()
             self.btn_step_back.enabled = self._can_step_back()
 
+        elif self.state == STATE_PLAY:
+            self.play_scene.update(dt)
+            if self.play_running and not self.play_solved:
+                self.play_elapsed += dt
+            if self.play_invalid_flash_timer > 0:
+                self.play_invalid_flash_timer -= dt
+                if self.play_invalid_flash_timer <= 0:
+                    self.play_invalid_flash_timer = 0.0
+                    self.play_invalid_flash_rod = None
+
     # ---------------------------- draw ----------------------------
 
     def _draw(self):
@@ -1639,6 +1974,10 @@ class HanoiApp:
             self._draw_preset_setup(surf)
         elif self.state == STATE_VISUALIZER:
             self._draw_visualizer(surf)
+        elif self.state == STATE_PLAY_SETUP:
+            self._draw_play_setup(surf)
+        elif self.state == STATE_PLAY:
+            self._draw_play(surf)
 
         for btn in self.buttons:
             btn.draw(surf)
@@ -1759,6 +2098,48 @@ class HanoiApp:
             TEXT_FAINT,
         )
         surf.blit(hint2, hint2.get_rect(centerx=cx, top=hint_y + 44))
+
+    def _draw_play_setup(self, surf):
+        self._draw_header(
+            surf,
+            "Play Mode",
+            "Set up a puzzle, then solve it yourself by hand",
+        )
+        cx = surf.get_width() // 2
+        panel_w = 640
+        left = cx - panel_w // 2
+        y = 210
+        row_h = 64
+        for i, rod in enumerate((1, 2, 3)):
+            label = self.font_body_bold.render(f"Rod {rod}:", True, TEXT_MAIN)
+            surf.blit(label, (left, y + i * row_h + 10))
+            self.play_setup_inputs[rod].draw(surf)
+
+        target_y = y + 3 * row_h + 20
+        label = self.font_body_bold.render("Target rod:", True, TEXT_MAIN)
+        surf.blit(label, (left, target_y + 10))
+        for b in self.play_target_buttons:
+            b.draw(surf)
+
+        hint_y = target_y + 90 + 66
+        hint1 = self.font_small.render(
+            "Example: '3, 2, 1' means ring 3 at bottom, ring 1 on top. Leave blank for an empty rod.",
+            True,
+            TEXT_FAINT,
+        )
+        surf.blit(hint1, hint1.get_rect(centerx=cx, top=hint_y + 20))
+        hint2 = self.font_small.render(
+            "Rings across all rods must be exactly 1..N with no repeats, largest at bottom.",
+            True,
+            TEXT_FAINT,
+        )
+        surf.blit(hint2, hint2.get_rect(centerx=cx, top=hint_y + 44))
+        hint3 = self.font_small.render(
+            "Goal: move every ring onto the target rod. Drag rings, or click a rod then another to move.",
+            True,
+            TEXT_FAINT,
+        )
+        surf.blit(hint3, hint3.get_rect(centerx=cx, top=hint_y + 68))
 
     def _draw_preset_setup(self, surf):
         builtin_count = 0
@@ -1895,6 +2276,87 @@ class HanoiApp:
             color = SUCCESS if "Valid" in self.verify_feedback else ERROR
             t = self.font_body_bold.render(self.verify_feedback, True, color)
             surf.blit(t, t.get_rect(right=w - 24, top=toast_y))
+
+    def _format_time(self, seconds):
+        seconds = max(0, seconds)
+        m = int(seconds) // 60
+        s = seconds - m * 60
+        return f"{m:02d}:{s:05.2f}"
+
+    def _draw_play(self, surf):
+        w = surf.get_width()
+        title = f"Play Mode — reach Rod {self.play_target}" if self.play_target else "Play Mode"
+        title_surf = self.font_h2.render(title, True, TEXT_MAIN)
+        surf.blit(title_surf, (24, 30))
+
+        # HUD: timer + move counter, top-right.
+        timer_str = self._format_time(self.play_elapsed)
+        timer_color = SUCCESS if self.play_solved else TEXT_MAIN
+        timer_surf = self.font_h2.render(timer_str, True, timer_color)
+        surf.blit(timer_surf, timer_surf.get_rect(right=w - 24, top=26))
+        moves_label = f"Moves: {self.play_move_count}"
+        moves_surf = self.font_body.render(moves_label, True, TEXT_DIM)
+        surf.blit(
+            moves_surf,
+            moves_surf.get_rect(right=w - 24, top=26 + timer_surf.get_height() + 4),
+        )
+
+        # Highlight the selected rod (click-to-select) with a soft glow band
+        # behind it, and flash red briefly over an invalid target rod.
+        scene = self.play_scene
+        if self.play_selected_rod is not None:
+            x = scene.rod_x[self.play_selected_rod]
+            band = pygame.Rect(0, 0, scene.max_ring_w + 40, scene.rod_height + 40)
+            band.center = (int(x), int((scene.rod_top_y + scene.base_y) / 2))
+            glow = pygame.Surface(band.size, pygame.SRCALPHA)
+            pygame.draw.rect(glow, (*ACCENT, 40), glow.get_rect(), border_radius=24)
+            pygame.draw.rect(glow, (*ACCENT, 130), glow.get_rect(), width=3, border_radius=24)
+            surf.blit(glow, band.topleft)
+        if self.play_invalid_flash_rod is not None and self.play_invalid_flash_timer > 0:
+            x = scene.rod_x[self.play_invalid_flash_rod]
+            t = clamp(self.play_invalid_flash_timer / 0.35, 0.0, 1.0)
+            fill_alpha = int(30 * t)
+            border_alpha = int(190 * t)
+            band = pygame.Rect(0, 0, scene.max_ring_w + 40, scene.rod_height + 40)
+            band.center = (int(x), int((scene.rod_top_y + scene.base_y) / 2))
+            glow = pygame.Surface(band.size, pygame.SRCALPHA)
+            pygame.draw.rect(glow, (*ERROR, fill_alpha), glow.get_rect(), border_radius=24)
+            pygame.draw.rect(glow, (*ERROR, border_alpha), glow.get_rect(), width=3, border_radius=24)
+            surf.blit(glow, band.topleft)
+
+        scene.draw(surf, self.font_ring)
+
+        hint = "Drag a ring, or click a rod to select it and click another rod to move there."
+        hint_surf = self.font_small.render(hint, True, TEXT_FAINT)
+        surf.blit(hint_surf, hint_surf.get_rect(centerx=scene.area.centerx, top=scene.area.y - 30))
+
+        if self.play_solved:
+            optimal = self.play_optimal_moves
+            extra = self.play_move_count - optimal
+            if extra <= 0:
+                verdict = "Optimal! You matched the best possible solution."
+            else:
+                verdict = f"Solved in {extra} move{'s' if extra != 1 else ''} more than optimal ({optimal})."
+            lines = [
+                "Solved!",
+                f"Time: {self._format_time(self.play_elapsed)}   Moves: {self.play_move_count}",
+                verdict,
+            ]
+            panel_w2 = 520
+            panel_h2 = 130
+            panel_rect = pygame.Rect(0, 0, panel_w2, panel_h2)
+            panel_rect.center = (scene.area.centerx, scene.area.y + 90)
+            rounded_rect(
+                surf, panel_rect, PANEL_BG_LIGHT, radius=16,
+                border_color=SUCCESS, border_width=2,
+            )
+            ly = panel_rect.y + 16
+            for i, line in enumerate(lines):
+                font = self.font_h2 if i == 0 else self.font_body
+                color = SUCCESS if i == 0 else TEXT_MAIN
+                line_surf = font.render(line, True, color)
+                surf.blit(line_surf, line_surf.get_rect(centerx=panel_rect.centerx, top=ly))
+                ly += line_surf.get_height() + 6
 
     def _save_dialog_rect(self):
         rect = pygame.Rect(0, 0, SAVE_DIALOG_W, SAVE_DIALOG_H)
