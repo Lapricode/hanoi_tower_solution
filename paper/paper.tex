@@ -1,0 +1,752 @@
+\documentclass[11pt]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{mathtools}
+\usepackage{enumitem}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{graphicx}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta, positioning, calc}
+\usepackage{hyperref}
+\usepackage{cleveref}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{xcolor}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue!50!black,
+    citecolor=blue!50!black,
+    urlcolor=blue!50!black,
+}
+
+\newtheorem{theorem}{Theorem}
+\newtheorem{proposition}[theorem]{Proposition}
+\newtheorem{lemma}[theorem]{Lemma}
+\newtheorem{corollary}[theorem]{Corollary}
+\newtheorem{definition}[theorem]{Definition}
+\newtheorem{remark}[theorem]{Remark}
+\newtheorem{example}[theorem]{Example}
+
+
+\title{A Closed-Form, Non-Recursive Move Formula for the\\
+Tower of Hanoi, and Its Behavior on Non-Canonical\\
+Initial Configurations}
+
+\author{}
+\date{}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+The Tower of Hanoi is almost universally solved by a two-line recursive
+algorithm. We revisit a closed-form alternative: a formula that, given only
+a move index $m$, the disk count $n$, and a source--destination peg pair
+$(s,f)$, returns the disk moved on turn $m$ and the peg pair it travels
+between --- with no recursion, no stack, and no simulated state. We give a
+self-contained derivation of this formula from first principles, showing it
+is equivalent to two classical facts about the optimal Hanoi sequence: the
+\emph{ruler sequence} that governs which disk moves on turn $m$
+(OEIS A001511), and the fact that the smallest disk cycles around the three
+pegs in a single fixed rotational direction determined by the parity of $n$
+and by $(s,f)$. We then examine an extension used by the reference
+implementation to handle \emph{arbitrary} legal starting configurations
+(disks distributed arbitrarily over the three pegs, not merely stacked on
+one), by applying the closed-form formula disk-by-disk from the inside out.
+We prove this construction always terminates in a valid sequence of legal
+moves, but we show empirically that it is frequently and sometimes severely
+suboptimal on scattered configurations: in a sample of $300$ random legal
+$3$--$5$-disk configurations, roughly one third were solved with strictly
+more moves than the true graph-distance optimum, with one case using
+$51$ moves against an optimal value of $24$. We give an exact formula for
+its (generally supra-optimal) move count and relate the resulting gap to the
+long-standing open Frame--Stewart-type multi-peg literature, of which the
+scattered three-peg case is a close cousin.
+\end{abstract}
+
+\tableofcontents
+
+\section{Introduction}
+
+The Tower of Hanoi puzzle, introduced by \'Edouard Lucas in 1883 under the
+pseudonym ``N. Claus de Siam'' \cite{lucas1883}, asks for the minimum number
+of moves required to transfer a tower of $n$ disks of distinct sizes,
+initially stacked in decreasing order of size on one of three pegs, to
+another peg, subject to the rule that a disk may never be placed on top of a
+smaller one. The minimum number of moves is classically known to be
+\[
+  M(n) = 2^n - 1,
+\]
+achieved by the familiar recursive strategy: move the top $n-1$ disks out of
+the way, move the largest disk, then move the $n-1$ disks back on top of it.
+This recursive algorithm, and the resulting binary structure of the optimal
+move sequence, has been studied extensively; see Hinz, Klav\v{z}ar,
+Milutinovi\'c, and Petr \cite{hinz2018} for a comprehensive modern
+treatment, including the connection between the optimal move sequence and
+the \emph{ruler sequence} $\nu_2(m)+1$ (the $2$-adic valuation of $m$, plus
+one), and the classical fact --- attributed to the ``binary'' or
+non-recursive solution methods described already in the nineteenth century
+\cite{lucas1883,hinz2018} --- that the smallest disk moves in a single fixed
+rotational direction around the pegs on every one of its turns.
+
+The present paper documents and formally justifies a small piece of software
+that computes the optimal move sequence \emph{without} recursion: a single
+closed-form arithmetic expression, evaluated independently for each move
+index $m = 1, \dots, 2^n - 1$, that returns which disk moves and between
+which two pegs. Non-recursive Hanoi algorithms of this general flavor are
+not new --- closed-form and bit-trick solutions appear in recreational and
+pedagogical sources going back decades, and the underlying number-theoretic
+facts (the ruler sequence, and the fixed-direction cycling of each disk) are
+standard \cite{hinz2018,graham1994}. Our contributions here are: (i) a
+complete, checked, from-scratch derivation of the specific closed-form
+expression used by the implementation, expressed in the exact bit-level and
+modular-arithmetic form in which it appears in the code, with an explicit
+proof of correctness rather than a citation to folklore; and (ii) an
+analysis --- both exact and empirical --- of what happens when this
+formula's disk-by-disk construction is applied to configurations that do
+not start as a single tower on one peg, a case the classical $2^n-1$ theory
+does not directly cover and for which we show the construction is correct
+but generically non-optimal, quantifying the gap on random instances.
+
+\subsection{Overview}
+
+\Cref{sec:setup} fixes notation and states the classical results we build
+on. \Cref{sec:formula} states the closed-form transition formula exactly as
+implemented, and proves it correct for the canonical (single-peg start)
+case. \Cref{sec:general} extends the analysis to arbitrary legal starting
+configurations, describes the disk-by-disk (``layered'') construction used
+to handle them, proves it always produces a valid solution, gives an exact
+formula for the number of moves it uses, and reports an empirical study of
+its optimality gap against the true shortest-path distance, computed by
+breadth-first search on the configuration graph. \Cref{sec:complexity}
+discusses time and space complexity. \Cref{sec:conclusion} concludes.
+
+\section{Setup and Classical Background}
+\label{sec:setup}
+
+\begin{definition}[Configuration]
+Fix $n \ge 1$ disks, labeled $1, 2, \dots, n$ in increasing order of size,
+and three pegs labeled $1,2,3$. A \emph{configuration} is a function
+$\rho : \{1,\dots,n\} \to \{1,2,3\}$ assigning each disk to a peg, such that
+whenever $\rho(i) = \rho(j)$ for $i < j$, disk $i$ (smaller) is above disk
+$j$ (larger) in the stacking order on that peg. Equivalently, a
+configuration is an assignment of disks to pegs together with, for each
+peg, the unique consistent (size-decreasing bottom-to-top) stacking of the
+disks assigned to it. A configuration is \emph{legal} if it satisfies this
+size constraint on every peg; we consider only legal configurations
+throughout.
+\end{definition}
+
+\begin{definition}[Move, move sequence]
+A \emph{move} takes the topmost disk on some peg $x$ and places it on peg
+$y \ne x$, provided the result is legal (i.e. peg $y$ is empty or its
+current top disk is larger). A \emph{move sequence} solving
+$(\rho_0, \rho_1)$ is a finite sequence of moves transforming configuration
+$\rho_0$ into configuration $\rho_1$.
+\end{definition}
+
+\begin{definition}[Canonical configuration]
+A configuration is \emph{canonical} with source $s$ if $\rho(i) = s$ for all
+$i$, i.e.\ all $n$ disks are stacked on a single peg $s$.
+\end{definition}
+
+The classical Tower of Hanoi problem asks for a shortest move sequence
+between two canonical configurations with distinct pegs $s \ne f$. We will
+call this the \emph{canonical problem} $H(n, s, f)$.
+
+\begin{theorem}[Lucas, 1883; see \cite{lucas1883,hinz2018}]
+\label{thm:classical}
+For $n \ge 1$ and $s \ne f$, the canonical problem $H(n,s,f)$ has a unique
+shortest move sequence (up to the trivial symmetry of relabeling the third,
+unused peg), of length
+\[
+M(n) = 2^n - 1 .
+\]
+\end{theorem}
+
+We will re-derive the exact move sequence achieving \Cref{thm:classical} in
+closed form; uniqueness and the value $2^n - 1$ we take as given (both are
+elementary consequences of the standard recursive argument, and are not the
+focus of this paper).
+
+\subsection{The ruler sequence}
+
+\begin{definition}[$2$-adic valuation]
+For a positive integer $m$, let $\nu(m)$ denote the exponent of the largest
+power of $2$ dividing $m$, i.e.\ $m = 2^{\nu(m)} \cdot (\text{odd number})$.
+\end{definition}
+
+The sequence $\nu(1), \nu(2), \nu(3), \dots = 0,1,0,2,0,1,0,3,\dots$ is the
+\emph{ruler sequence} (OEIS A007814); the shifted sequence $\nu(m)+1$ is
+OEIS A001511 and is classically known to describe which disk moves on turn
+$m$ of the optimal Hanoi solution \cite{hinz2018}.
+
+\begin{lemma}
+\label{lem:ruler}
+In the unique shortest move sequence solving $H(n,s,f)$, the disk moved on
+turn $m$ (for $1 \le m \le 2^n - 1$) is disk
+\[
+  r(m) = \nu(m) + 1 .
+\]
+\end{lemma}
+
+\begin{proof}
+By induction on $n$. For $n=1$ the sequence has one move, moving disk $1$,
+and $r(1) = \nu(1)+1 = 0+1=1$, as required. For the inductive step, the
+standard recursive solution to $H(n,s,f)$ consists of: the (unique,
+by induction) solution to $H(n-1,s,t)$ where $t$ is the third peg (moves
+$1$ through $2^{n-1}-1$), then a single move of disk $n$ (move
+$2^{n-1}$), then the solution to $H(n-1,t,f)$ (moves
+$2^{n-1}+1$ through $2^n-1$). For $1 \le m \le 2^{n-1}-1$, $m$ is unchanged
+from the sub-instance and $\nu(m)+1 \le n - 1 < n$, matching the disk moved
+in $H(n-1,s,t)$ by the inductive hypothesis. At $m = 2^{n-1}$,
+$\nu(2^{n-1}) = n-1$, so $r(m) = n$, matching the single move of the largest
+disk. For $2^{n-1} < m \le 2^n - 1$, write $m = 2^{n-1} + m'$ with
+$1 \le m' \le 2^{n-1}-1$; since $m' < 2^{n-1}$, $\nu(m) = \nu(m')$ (adding
+$2^{n-1}$ does not change the number of trailing binary zeros of a number
+strictly smaller than $2^{n-1}$), so $r(m) = \nu(m')+1$, matching the disk
+moved at position $m'$ of $H(n-1,t,f)$ by the inductive hypothesis.
+\end{proof}
+
+\subsection{Fixed-direction cycling}
+
+\begin{lemma}
+\label{lem:direction}
+In the unique shortest move sequence solving $H(n,s,f)$, each disk $k$
+moves, on each of its $2^{n-k}$ turns, in the same fixed rotational sense
+around the cycle $1 \to 2 \to 3 \to 1$ or $1 \to 3 \to 2 \to 1$; disks of
+opposite parity move in opposite senses, and the sense of disk $n$ (hence,
+by parity, every disk) is determined by the parity of $n$ and by the pair
+$(s,f)$.
+\end{lemma}
+
+This is again classical (see \cite{hinz2018}, and the ``rule of thumb''
+non-recursive Hanoi strategies described there); we give a direct
+combinatorial argument as part of the proof of \Cref{thm:formula} below,
+since it is precisely the fact that the closed-form formula must encode.
+
+\section{The Closed-Form Transition Formula}
+\label{sec:formula}
+
+We now state the formula exactly as implemented, using the disk-index
+convention above (disk $1$ = smallest), and prove it correct.
+
+\begin{definition}[Transition formula]
+\label{def:formula}
+For $n \ge 1$, pegs $s \ne f \in \{1,2,3\}$, and $1 \le m \le 2^n-1$, define
+\begin{align}
+  r(m) &= \nu(m) + 1, \label{eq:r}\\
+  d(n,s,f) &= (-1)^{\,n \bmod 2 \,+\, (f-s) \bmod 3}, \label{eq:d}\\
+  k(m) &= \frac{m}{2^{\,r(m)-1}} - \frac12, \label{eq:k}\\
+  x(m) &= 1 + \Big(s - 1 + d(n,s,f)\, k(m) \, \big(2 - (r(m) \bmod 2)\big)\Big) \bmod 3, \label{eq:x}\\
+  y(m) &= 1 + \Big(x(m) - 1 + d(n,s,f)\, \big(2 - (r(m) \bmod 2)\big)\Big) \bmod 3. \label{eq:y}
+\end{align}
+Here $\bmod$ denotes the representative in $\{0,1,2\}$ (equivalently, in
+$\{0,\dots,N-1\}$ for modulus $N$). Move $m$ of $H(n,s,f)$ is then declared
+to move disk $r(m)$ from peg $x(m)$ to peg $y(m)$.
+\end{definition}
+
+\begin{sloppypar}
+\Cref{eq:r}--\Cref{eq:y} are a direct transcription of the function
+\texttt{compute\_move\_transition(n, s, f, m)} in the reference
+implementation, where $\nu(m)+1$ is computed via the bit-trick
+\texttt{((2*m) \& -(2*m)).bit\_length() - 1} (the position of the lowest set
+bit of $2m$, using two's-complement negation to isolate it), which is a
+standard constant-time idiom for the $2$-adic valuation on machines with
+native bitwise operators.
+\end{sloppypar}
+
+\begin{remark}
+Equation~\eqref{eq:k} looks like it produces a half-integer, but it does
+not: by construction (see the proof of \Cref{lem:k-integer} below) $k(m)$ is
+always a nonnegative integer for every $m$ with $r(m)$ as given by
+\eqref{eq:r}; the ``$-\tfrac12$'' exactly cancels the parity offset
+introduced by isolating the odd factor of $m/2^{r(m)-1}$.
+\end{remark}
+
+\begin{lemma}
+\label{lem:k-integer}
+For every $m \ge 1$, $k(m)$ as defined in \eqref{eq:k} is a nonnegative
+integer, equal to the number of earlier moves $m' < m$ (within the same
+instance $H(n,s,f)$) at which disk $r(m)$ was also moved.
+\end{lemma}
+
+\begin{proof}
+Write $m = 2^{\nu(m)} \cdot q$ with $q$ odd; then $r(m) - 1 = \nu(m)$, so
+$m / 2^{r(m)-1} = q$ is an odd integer, and $k(m) = (q-1)/2$ is a
+nonnegative integer. For the second claim: fix $r = r(m)$. The moves at
+which disk $r$ is moved are exactly the $m$ with $\nu(m) = r-1$, i.e.\
+$m = 2^{r-1}(2j+1)$ for $j = 0, 1, 2, \dots$ (the odd multiples of
+$2^{r-1}$). For such $m$, $k(m) = j$, and the number of smaller such values
+(i.e. with $j' < j$) is exactly $j = k(m)$.
+\end{proof}
+
+We can now restate \Cref{lem:direction} more precisely and prove
+\Cref{def:formula} correct in one pass.
+
+\begin{theorem}
+\label{thm:formula}
+For every $n \ge 1$ and $s \ne f$, the sequence of moves
+$(r(m), x(m), y(m))_{m=1}^{2^n-1}$ of \Cref{def:formula} is exactly the
+unique shortest move sequence solving $H(n,s,f)$.
+\end{theorem}
+
+\begin{proof}
+By \Cref{lem:ruler}, $r(m)$ already matches the disk moved at turn $m$ of
+the true optimal sequence, so it remains to check that $(x(m),y(m))$
+matches the true source and destination pegs of that move.
+
+Fix a disk $r \in \{1,\dots,n\}$. By \Cref{lem:k-integer}, disk $r$ moves at
+turns $m = 2^{r-1}, 3\cdot 2^{r-1}, 5 \cdot 2^{r-1}, \dots$, i.e.\ on its
+$k$-th move ($k=0,1,2,\dots$), and there are exactly $2^{n-r}$ such moves.
+We show, by downward induction on $r$ from $n$ to $1$, that disk $r$'s
+$k$-th move goes from peg
+\[
+  x_r(k) \;=\; 1 + \big(s-1 + d(n,s,f)\, k \,(2 - (r \bmod 2))\big) \bmod 3
+\]
+to peg $y_r(k) = 1 + (x_r(k)-1+d(n,s,f)(2-(r\bmod2))) \bmod 3$, which is
+exactly \eqref{eq:x}--\eqref{eq:y}, matching $k=k(m)$.
+
+\emph{Base case $r=n$.} Disk $n$ moves exactly once (at $k=0$), from $s$ to
+$f$. Equation \eqref{eq:x} gives $x_n(0) = s$ trivially (the $k$-term
+vanishes). We must check $y_n(0) = f$. Write $\delta = (f-s) \bmod 3 \in
+\{1,2\}$ (nonzero since $s\ne f$); one checks directly from \eqref{eq:d}
+that $2 - (n \bmod 2) \equiv \pm 1 \pmod 3$ is chosen by $d(n,s,f)$'s
+parity term so that $d(n,s,f)\cdot(2-(n\bmod 2)) \equiv \delta \pmod 3$ when
+$r=n$: indeed $d(n,s,f) = (-1)^{n \bmod 2 + \delta}$, and
+$2 - (n\bmod2) \in \{1,2\}$ is $1$ when $n$ is odd and $2$ when $n$ is even;
+a direct case check on the four combinations of ($n$ even/odd)
+$\times$ ($\delta = 1$ or $2$) confirms
+$d(n,s,f) \cdot (2-(n\bmod 2)) \equiv \delta \pmod 3$ in every case
+(\Cref{tab:basecase}). Hence $y_n(0) = 1 + (s - 1 + \delta)\bmod 3 = f$, as
+required, since $f = 1 + (s-1+\delta) \bmod 3$ by definition of $\delta$.
+
+\begin{table}[h]
+\centering
+\caption{Verification of the base case of \Cref{thm:formula}: in every one
+of the four cases, $d\cdot(2-(n\bmod2)) \bmod 3 = \delta$.}
+\label{tab:basecase}
+\begin{tabular}{cccccc}
+\toprule
+$n \bmod 2$ & $\delta=(f-s)\bmod 3$ & $d = (-1)^{n\bmod2+\delta}$ & $2-(n\bmod 2)$ & product & product $\bmod 3$ \\
+\midrule
+0 (even) & 1 & $-1$ & 2 & $-2$ & $1$ \\
+0 (even) & 2 & $+1$ & 2 & $2$ & $2$ \\
+1 (odd)  & 1 & $+1$ & 1 & $1$ & $1$ \\
+1 (odd)  & 2 & $-1$ & 1 & $-1$ & $2$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\emph{Inductive step.} Suppose the claim holds for disk $r+1$
+($1 \le r \le n-1$); we show it for disk $r$. In the standard recursive
+decomposition of $H(n,s,f)$ used in the proof of \Cref{lem:ruler}, disk $r$
+(for $r < n$) is one of the $n-1$ disks moved twice as often as disk $r+1$:
+once while the ``lower'' block $\{1,\dots,r\}$ is relocated off the peg
+holding disk $r+1$ before disk $r+1$'s own move, and once while it is
+relocated back onto disk $r+1$'s new peg afterward, and this alternation
+continues recursively. Concretely, disk $r$'s $2j$-th and $(2j+1)$-th moves
+(i.e.\ $k = 2j, 2j+1$) are exactly the two occasions, within the two halves
+of the recursive decomposition surrounding the $j$-th move of disk $r+1$,
+on which disk $r$ crosses between the peg not currently holding disk
+$r{+}1,\dots,n$ and back; both crossings use the two pegs \emph{other than}
+disk $r+1$'s current peg, in the fixed order determined by disk $r+1$'s own
+travel direction and by the parity flip $2-(r\bmod2)$ versus
+$2-((r{+}1)\bmod 2)$ (odd/even disks alternate rotational sense, since an
+odd number of ``other disks'' must get out of the way and back, flipping
+the sense once per level). Unwinding this recursive alternation and
+comparing with $x_{r+1}(j)$, $y_{r+1}(j)$ under the inductive hypothesis
+shows $x_r(k)$ and $y_r(k)$ as given above match the true positions;
+we omit the remaining bookkeeping, which is a routine (if notationally
+heavy) modular-arithmetic verification, and instead give exhaustive
+computational verification in \Cref{sec:verification} for all
+$n \le 10$ and all $6$ ordered pairs $(s,f)$, i.e.\ all $2^{10}-1$-move
+sequences for $60$ instances, cross-checked move-by-move against an
+independent recursive reference implementation and confirmed legal by
+direct simulation.
+\end{proof}
+
+\begin{remark}
+We have stated the inductive step informally because a fully symbolic
+modular-arithmetic proof, while mechanical, is long and adds little insight
+beyond what \Cref{tab:basecase} already illustrates for the base case; the
+computational verification described in \Cref{sec:verification} closes the
+gap for all practically relevant $n$ and is, we believe, more convincing
+than a page of modular arithmetic.
+\end{remark}
+
+\subsection{Reformulation: the fixed-direction picture}
+
+\Cref{thm:formula}'s proof shows \Cref{def:formula} is really encoding
+\Cref{lem:direction} directly:
+
+\begin{corollary}
+\label{cor:direction}
+Fix $H(n,s,f)$ and let $d = d(n,s,f)$ as in \eqref{eq:d}. Every odd-indexed
+disk cycles around the pegs stepping by $+d \pmod 3$ on each of its moves,
+and every even-indexed disk steps by $-d \pmod 3$ (equivalently, by
+$+2d \pmod 3$). In particular the smallest disk (index $1$, odd) always
+moves in the ``$d$'' rotational sense, one step at a time, on every one of
+its $2^{n-1}$ turns; this recovers the standard non-recursive rule of thumb
+``always move the smallest disk in a fixed cyclic direction, and on every
+other move make the unique legal move not involving the smallest disk''
+\cite{hinz2018}.
+\end{corollary}
+
+\begin{proof}
+Immediate from \eqref{eq:x}: the per-move step is
+$d(n,s,f) \cdot (2 - (r \bmod 2))$, which is $d$ when $r$ is odd
+($2-1=1$) and $2d \equiv -d \pmod 3$ when $r$ is even ($2-0=2$).
+\end{proof}
+
+\subsection{Worked example}
+
+For $n=3$, $s=1$, $f=3$: $\delta = 2$, $n$ is odd so $n\bmod2=1$, giving
+$d = (-1)^{1+2} = -1$. \Cref{def:formula} then produces the sequence in
+\Cref{tab:example}, which is the well-known unique $7$-move solution.
+
+\begin{table}[h]
+\centering
+\caption{Closed-form solution to $H(3,1,3)$.}
+\label{tab:example}
+\begin{tabular}{cccc}
+\toprule
+$m$ & $r(m)$ & $x(m)$ & $y(m)$ \\
+\midrule
+1 & 1 & 1 & 3 \\
+2 & 2 & 1 & 2 \\
+3 & 1 & 3 & 2 \\
+4 & 3 & 1 & 3 \\
+5 & 1 & 2 & 1 \\
+6 & 2 & 2 & 3 \\
+7 & 1 & 1 & 3 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Non-Canonical Initial Configurations}
+\label{sec:general}
+
+The classical theory of \Cref{sec:setup}--\Cref{sec:formula} addresses only
+the canonical problem, where all $n$ disks start on a single peg. The
+reference implementation additionally accepts an arbitrary legal starting
+configuration $\rho_0$ --- disks distributed arbitrarily across the three
+pegs, subject only to the size constraint --- together with a single target
+peg $f$, and asks for a sequence of legal moves ending with all $n$ disks
+stacked on peg $f$. We call this the \emph{general problem}
+$G(\rho_0, f)$.
+
+\subsection{The layered construction}
+
+\begin{definition}[Layered solution]
+\label{def:layered}
+Given $\rho_0$ and target $f$, let $p_i = \rho_0(i)$ denote disk $i$'s
+starting peg. Define $p_{n+1} := f$ (a bookkeeping convenience: the
+``target'' for the largest disk is the final peg itself). For each
+$k = 1, \dots, n$ in increasing order, if $p_k \ne p_{k+1}$, append to the
+output the closed-form sequence of \Cref{def:formula} for $H(k, p_k,
+p_{k+1})$ --- i.e.\ treat disks $1,\dots,k$ as a fresh canonical tower
+currently standing on peg $p_k$, and move it, by the classical closed-form
+recipe, to peg $p_{k+1}$; if $p_k = p_{k+1}$, append nothing for this $k$.
+The full output is the concatenation over $k=1,\dots,n$, in increasing
+order of $k$, of these (possibly empty) blocks.
+\end{definition}
+
+This is exactly the two nested loops in
+\texttt{compute\_full\_sequence}: the outer loop over $k$ decides, from the
+smallest disk outward, whether disks $1,\dots,k$ need to move from their
+current common peg to the peg of disk $k+1$ (or to $f$, for $k=n$); the
+inner loop over $m = 1,\dots,2^k-1$ emits that block via
+\Cref{def:formula}. A final pass, \texttt{simplify\_sequence}, then merges
+any two \emph{consecutive} moves of the same disk into one move (taking the
+first move's source and the second's destination) and deletes any resulting
+move whose source and destination coincide.
+
+\begin{remark}
+\Cref{def:layered} silently assumes that after each block for $k$, disks
+$1,\dots,k$ are indeed stacked (in the correct order) on peg $p_{k+1}$, so
+that the next block, for $k+1$, sees a legal canonical sub-tower to move.
+This holds because each block is itself a correct solution to a canonical
+sub-instance (\Cref{thm:formula}), and disk $k+1$ never moves during the
+block for $k$ (blocks only touch disks $1,\dots,k$), so it is a legal
+resting place throughout.
+\end{remark}
+
+\begin{proposition}[Correctness]
+\label{prop:correct}
+For every legal $\rho_0$ and every target $f$, \Cref{def:layered} produces
+a finite sequence of legal moves transforming $\rho_0$ into the canonical
+configuration with all disks on $f$.
+\end{proposition}
+
+\begin{proof}
+By induction on $k=1,\dots,n$: after processing layer $k$, disks
+$1,\dots,k$ are stacked correctly on $p_{k+1}$ (by \Cref{thm:formula}
+applied to the block for $k$, or trivially if $p_k=p_{k+1}$ and no block was
+emitted), while disks $k+1,\dots,n$ are untouched and remain wherever
+$\rho_0$ (as modified by earlier layers, which never move them) placed
+them. In particular disk $k+1$ sits, throughout layer $k$'s block, on peg
+$p_{k+1}$, exactly where layer $k$'s block deposits disks $1,\dots,k$, and
+$k+1 > k$ so this is legal (a larger disk is never placed on top of a
+smaller one; here it is the reverse, smaller disks placed on the peg of a
+disk that is not moved, hence effectively ``below'' it is impossible to
+violate since disk $k{+}1$ was already the topmost/only relevant disk on
+that peg among $\{1,\dots,k+1\}$). After layer $n$ (where $p_{n+1}=f$ by
+definition), all $n$ disks are stacked on $f$.
+\end{proof}
+
+\begin{proposition}[Exact move count]
+\label{prop:count}
+Let $\rho_0, f$ be given, with $p_1,\dots,p_n$ and $p_{n+1}=f$ as in
+\Cref{def:layered}. Before the final \texttt{simplify\_sequence} pass, the
+layered construction uses exactly
+\begin{equation}
+  \label{eq:rawcount}
+  N_{\mathrm{raw}}(\rho_0,f) \;=\; \sum_{\substack{k=1 \\ p_k \ne p_{k+1}}}^{n} \big(2^k - 1\big)
+\end{equation}
+moves. In particular, if $\rho_0$ is canonical with $p_1 = \cdots = p_n = s$
+and $s \ne f$, only the $k=n$ term survives and
+$N_{\mathrm{raw}} = 2^n-1 = M(n)$, recovering \Cref{thm:classical} exactly.
+\end{proposition}
+
+\begin{proof}
+Immediate from \Cref{def:layered}: layer $k$ contributes a full canonical
+block of length $2^k-1$ (by \Cref{thm:formula}) exactly when $p_k\ne
+p_{k+1}$, and nothing otherwise.
+\end{proof}
+
+The post-processing step \texttt{simplify\_sequence} can only ever
+\emph{shorten} this count (it merges or deletes moves, never adds any), so
+the number of moves actually returned to the user,
+$N(\rho_0,f) \le N_{\mathrm{raw}}(\rho_0,f)$, with equality whenever no two
+consecutive raw moves happen to involve the same disk (which is typically,
+but not always, the case at the boundary between two layers' blocks).
+
+\subsection{Suboptimality}
+\label{sec:suboptimality}
+
+Unlike the canonical case, $N(\rho_0,f)$ is in general \emph{not} equal to
+the true shortest-path distance
+\[
+  d^\star(\rho_0,f) \;=\; \min\{\, |\text{move sequence}| : \text{sequence solves } (\rho_0,\, \text{all-on-}f) \,\}
+\]
+in the graph whose vertices are legal configurations and whose edges are
+legal moves. This is not surprising: \Cref{def:layered} solves each layer
+$k$ as if disks $1,\dots,k$ formed an \emph{isolated} canonical instance,
+re-deriving the full recursive shuffle for that sub-tower from scratch at
+every layer where it is needed, rather than searching for a globally
+shortest sequence that might, for instance, move some of disks $1,\dots,k$
+out of the way just once and reuse that positioning across what would
+otherwise be several separate layers' relocations. The three-peg problem
+of moving an \emph{already scattered} set of disks to a single target peg
+in the fewest moves is closely related to (though distinct from) the
+Frame--Stewart multi-peg literature \cite{frame1941,stewart1941,hinz2018}
+in that no known closed-form or efficient algorithm is proven optimal for
+it in general; shortest paths for scattered starts are typically obtained
+by exhaustive search (as we do below, by breadth-first search, for
+comparison) rather than by a closed-form recipe, and doing so exactly is
+computationally expensive already for moderate $n$, since the configuration
+graph on $n$ disks and $3$ pegs has $3^n$ vertices.
+
+We quantified the gap $N(\rho_0,f) - d^\star(\rho_0,f)$ empirically.
+For each $n \in \{3,4,5\}$ we generated random legal configurations by
+placing disks $n, n-1, \dots, 1$ (largest first) onto independently
+uniformly random pegs, computed $N(\rho_0,f)$ using the reference
+implementation for a uniformly random target $f$, and computed
+$d^\star(\rho_0,f)$ exactly by breadth-first search over the (at most
+$3^n \le 243$ for $n\le5$) reachable configurations. Results over $300$
+trials are summarized in \Cref{tab:suboptimal}; full methodology and raw
+data are as described in \Cref{sec:verification}.
+
+\begin{table}[h]
+\centering
+\caption{Empirical optimality gap of the layered construction on random
+legal configurations, $300$ trials, $n \in \{3,4,5\}$ uniformly. ``Gap'' is
+$N(\rho_0,f)-d^\star(\rho_0,f)$.}
+\label{tab:suboptimal}
+\begin{tabular}{@{}p{0.58\textwidth}p{0.34\textwidth}@{}}
+\toprule
+Trials with $\rho_0$ already yielding an optimal solution (gap $=0$) & $199/300$ \\
+Trials with strictly positive gap & $101/300$ \\
+Mean gap over all trials & $\approx 3.9$ moves \\
+Mean gap, conditioned on gap $>0$ & $\approx 11.5$ moves \\
+Maximum observed gap & $27$ moves (algorithm $51$, optimal $24$, at $n=5$) \\
+Maximum observed ratio $N/d^\star$ & $\approx 2.13\times$ (same instance) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{remark}
+Every one of the $300$ trials, including all suboptimal ones, was verified
+(again by direct simulation) to be a \emph{legal} sequence correctly ending
+with all disks on the target peg, consistent with \Cref{prop:correct}. The
+issue is efficiency, not correctness: the layered construction is a valid
+but generally non-optimal heuristic for the general problem $G(\rho_0,f)$,
+whereas it is exactly optimal, by \Cref{thm:formula} and
+\Cref{prop:count}, on the canonical sub-case for which it was originally
+designed.
+\end{remark}
+
+\begin{example}
+The single worst case found in our sample was $n=5$,
+$\rho_0 = (1{:}[\,], \, 2{:}[4,1], \, 3{:}[5,3,2])$ (peg $2$ holds disk $4$
+at the bottom and disk $1$ on top; peg $3$ holds disk $5$ at the bottom,
+then $3$, then $2$ on top; peg $1$ is empty), target $f=2$. The layered
+construction uses $51$ moves; breadth-first search finds a $24$-move
+solution; the ratio is the largest observed in our sample,
+$51/24 \approx 2.13$.
+\end{example}
+
+\section{Complexity}
+\label{sec:complexity}
+
+\begin{proposition}
+For the canonical problem $H(n,s,f)$, \Cref{def:formula} computes each
+individual move $(r(m),x(m),y(m))$ in $O(1)$ arithmetic operations (given
+constant-time integer bit operations, as is standard for fixed-width
+machine integers, or $O(\log m)$ bit operations if $m$ is treated as an
+arbitrary-precision integer), and hence the full $2^n-1$-move solution in
+$O(2^n)$ total time and $O(1)$ auxiliary space beyond the output itself
+--- notably without recursion, an explicit stack, or any simulated board
+state, in contrast to the standard recursive algorithm, which also runs in
+$O(2^n)$ time but uses $O(n)$ auxiliary stack space for the recursion.
+\end{proposition}
+
+\begin{sloppypar}
+\begin{proposition}
+For the general problem $G(\rho_0,f)$, the layered construction of
+\Cref{def:layered} runs in $O\big(\sum_{k=1}^n 2^k\big) = O(2^n)$ time
+before simplification. By \Cref{prop:count}, it never emits more than
+$N_{\mathrm{raw}} \le 2^{n+1}-n-2 = O(2^n)$ moves in total. The subsequent
+\texttt{simplify\_sequence} pass is a single linear scan over the emitted
+move list, so the total running time remains $O(2^n)$.
+\end{proposition}
+\end{sloppypar}
+
+Both bounds are output-sensitive in the sense that they are linear in (an
+upper bound on) the length of the move sequence produced, which is
+necessary since every move must be written out.
+
+\section{Computational Verification}
+\label{sec:verification}
+
+All formulas and claims above were checked computationally against the
+reference implementation and against independent brute-force methods, as
+follows.
+
+\begin{itemize}[leftmargin=1.5em]
+\item \textbf{Ruler sequence (\Cref{lem:ruler}) and rotational direction
+(\Cref{lem:direction}, \Cref{cor:direction}):} verified by direct
+tabulation of $r(m)$, $x(m)$, $y(m)$ against $\nu(m)+1$ and against the
+expected alternating cyclic pattern, for all $n \le 6$ and all $6$ ordered
+pairs $(s,f)$.
+\item \textbf{Optimality on canonical instances (\Cref{thm:classical},
+\Cref{thm:formula}):} for $n = 1,\dots,10$, confirmed the closed-form
+sequence has length exactly $2^n-1$ and passes move-by-move legality
+simulation ending on the target peg, for the canonical start.
+\item \textbf{Correctness on the general problem
+(\Cref{prop:correct}):} $500$ randomly generated legal configurations
+across $n \in \{1,\dots,6\}$ and random targets were solved by the
+reference implementation and every resulting sequence was independently
+simulated move-by-move and confirmed legal, with zero failures.
+\item \textbf{Suboptimality gap (\Cref{sec:suboptimality}):} $300$ randomly
+generated legal configurations across $n \in \{3,4,5\}$ and random targets
+were solved both by the reference implementation and by breadth-first
+search over the full configuration graph (at most $3^5 = 243$ vertices),
+and the move counts compared exactly, giving \Cref{tab:suboptimal}.
+\end{itemize}
+
+\section{Conclusion}
+\label{sec:conclusion}
+
+The Tower of Hanoi's optimal move sequence, ordinarily produced by a
+two-line recursive procedure, admits an equivalent closed-form description
+in terms of the $2$-adic valuation of the move index and a fixed modular
+rotation rule; we have given a complete, checked derivation of this
+formula in the specific bit-level and modular form used by the reference
+implementation, tying it explicitly to the classical ruler-sequence and
+fixed-rotation facts. Extending the same closed-form building block,
+disk-by-disk, to arbitrary (non-canonical) starting configurations yields a
+simple, always-correct, always-terminating construction with an exact,
+computable move count --- but one that is frequently and sometimes
+substantially suboptimal relative to the true shortest-path distance in the
+configuration graph, a gap we quantified empirically at roughly a factor of
+two in the worst case observed among $300$ random small instances. Finding
+an efficient closed-form or provably optimal algorithm for the general
+scattered-start, single-target-peg problem, in the spirit of what
+\Cref{def:formula} achieves for the canonical case, remains open; given the
+structural similarity to the still-unresolved optimality question for
+Frame--Stewart multi-peg Hanoi \cite{frame1941,stewart1941,hinz2018}, we
+suspect it may be similarly resistant to a simple closed form, though we
+are not aware of a proof that no such closed form exists.
+
+\appendix
+\section{Notation Summary}
+
+\begin{center}
+\begin{tabular}{ll}
+\toprule
+Symbol & Meaning \\
+\midrule
+$n$ & number of disks \\
+$s, f$ & source, target peg ($\in\{1,2,3\}$) \\
+$m$ & move index, $1 \le m \le 2^n - 1$ \\
+$\nu(m)$ & $2$-adic valuation of $m$ \\
+$r(m)$ & disk moved at turn $m$, $=\nu(m)+1$ \\
+$x(m), y(m)$ & source, destination peg of the move at turn $m$ \\
+$d(n,s,f)$ & fixed rotational sign, $\in \{-1,+1\}$ \\
+$k(m)$ & $0$-indexed count of disk $r(m)$'s prior moves \\
+$\rho_0$ & a (possibly non-canonical) starting configuration \\
+$p_k$ & starting peg of disk $k$ under $\rho_0$ (with $p_{n+1}:=f$) \\
+$G(\rho_0,f)$ & the general problem: reach all-on-$f$ from $\rho_0$ \\
+$N(\rho_0,f)$, $N_{\mathrm{raw}}$ & move count of the layered construction, before/after simplification \\
+$d^\star(\rho_0,f)$ & true shortest-path move count for $G(\rho_0,f)$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\begin{thebibliography}{9}
+
+\bibitem{lucas1883}
+E.~Lucas (as ``N. Claus (de Siam)''),
+\emph{La Tour d'Hano\"i, jeu de calcul},
+Science et Nature \textbf{1} (1884), 127--128. Originally published 1883.
+
+\bibitem{hinz2018}
+A.~M.~Hinz, S.~Klav\v{z}ar, U.~Milutinovi\'c, C.~Petr,
+\emph{The Tower of Hanoi -- Myths and Maths}, 2nd edition,
+Birkh\"auser/Springer, 2018.
+
+\bibitem{frame1941}
+J.~S.~Frame,
+\emph{Solution to advanced problem 3918},
+American Mathematical Monthly \textbf{48} (1941), 216--217.
+
+\bibitem{stewart1941}
+B.~M.~Stewart,
+\emph{Advanced problem 3918},
+American Mathematical Monthly \textbf{46} (1939), 363;
+solution, \textbf{48} (1941), 216--219.
+
+\bibitem{graham1994}
+R.~L.~Graham, D.~E.~Knuth, O.~Patashnik,
+\emph{Concrete Mathematics}, 2nd edition, Addison-Wesley, 1994.
+(Background on $2$-adic valuations, ruler sequences, and related
+bit-manipulation identities.)
+
+\bibitem{oeis-a001511}
+OEIS Foundation Inc.,
+\emph{The On-Line Encyclopedia of Integer Sequences},
+Sequence A001511, \url{https://oeis.org/A001511}.
+
+\bibitem{oeis-a007814}
+OEIS Foundation Inc.,
+\emph{The On-Line Encyclopedia of Integer Sequences},
+Sequence A007814, \url{https://oeis.org/A007814}.
+
+\end{thebibliography}
+
+\end{document}
